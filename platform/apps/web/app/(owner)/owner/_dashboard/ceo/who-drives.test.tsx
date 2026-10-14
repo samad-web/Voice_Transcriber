@@ -37,6 +37,7 @@ const CARD: DriverCard = {
   ],
   attributable: true,
   format: (v) => v.toLocaleString(),
+  measureSentence: (who, value) => `${who} made ${value} calls.`,
   insight: "One person carries the floor.",
 };
 
@@ -83,7 +84,7 @@ describe("hovering a slice", () => {
     }
   });
 
-  it("names the person and their share, with the raw value under it", () => {
+  it("says what the slice MEANS, not just its number", () => {
     render([CARD]);
     const groups = [...host.querySelectorAll(".group")].filter((g) =>
       g.querySelector('path[fill="transparent"]'),
@@ -92,9 +93,13 @@ describe("hovering a slice", () => {
     const first = groups[0]!.textContent ?? "";
     expect(first).toContain("brindha");
     expect(first).toContain("94%");
-    // The raw value answers the follow-up question without a second hover.
-    expect(first).toContain("320");
-    expect(first).toContain("calls");
+    // THE VERB. The legend beside the donut already gives the name and the
+    // share, so a tooltip repeating only those two tells the reader nothing
+    // they were not already looking at. "made 320 calls" is the addition.
+    expect(first).toContain("brindha made 320 calls.");
+    // And it sets the share against the floor's own total, so the percentage
+    // has a denominator on screen.
+    expect(first).toContain("341");
   });
 
   it("explains the Unattributed slice rather than leaving it a mystery grey", () => {
@@ -102,7 +107,17 @@ describe("hovering a slice", () => {
     const text = host.textContent ?? "";
     // The slice that most needs a tooltip: a grey wedge with no name on it
     // reads as a rendering fault, not as a measurement.
-    expect(text).toContain("No handset or owner on these");
+    expect(text).toContain("no handset or owner on them");
+    expect(text).toContain("cannot be credited to anybody");
+    // And it must not be read as a person - it is the absence of one.
+    expect(text).toContain("Not a person");
+  });
+
+  it("does not run the measure sentence for the unattributed slice", () => {
+    // "Unattributed made 10 calls" would be a sentence about a person who does
+    // not exist.
+    render([CARD]);
+    expect(host.textContent ?? "").not.toContain("Unattributed made");
   });
 
   it("is hidden until hover, and hidden entirely on a touch screen", () => {

@@ -282,17 +282,47 @@
    * VALIDATED, not eyeballed - dataviz scripts/validate_palette.js, light
    * surface #FFFFFF and dark #171717:
    *   slots 1-3 pass --pairs all in both modes (scatter, where any dot may
-   *     land beside any other): worst normal-vision dE 27.4 light / 18.1 dark.
+   *     land beside any other).
    *   slots 1-5 pass the adjacent pairlist in both modes (donut arcs and bar
    *     rows, which only ever touch their neighbour).
    * Three light slots sit under 3:1 on white, so the RELIEF RULE applies and
    * is met: every chart spending these ships direct labels (name + value on
    * the row, name + share in the donut legend) and a table twin.
    *
+   * ── SLOT 1 IS THE BRAND ACCENT, AND WHAT THAT COST ───────────────────────
+   *
+   * Slot 1 was #2d5b99 / #4d7cbd - a blue chosen for the ramp. It is now the
+   * product's own `--color-accent` in both modes, so the busiest actor is the
+   * same blue as the buttons and links around the chart. Asked for
+   * deliberately; measured before and after rather than assumed, because a
+   * validated palette is only validated until somebody edits it.
+   *
+   * Re-run on 2026-10-14. Every check holds, and ONE number moved:
+   *
+   *   light, slots 1-5 adjacent      PASS, unchanged
+   *   light, slots 1-3 --pairs all   PASS; normal-vision worst 27.6 (was 27.3)
+   *   dark,  slots 1-5 adjacent      unchanged, including the PRE-EXISTING
+   *                                  lightness-band FAIL on slots 4 and 5,
+   *                                  which this edit neither caused nor fixed
+   *   dark,  slots 1-3 --pairs all   PASS, but TRITAN SEPARATION FELL FROM
+   *                                  10.6 TO 6.2
+   *
+   * That last line is the real cost and is written here rather than discovered
+   * later. 6.2 is inside the 6-8 floor band, which the validator permits ONLY
+   * with secondary encoding - so it is legal here and would NOT be legal on a
+   * chart that relied on colour alone. Both charts that place slots 1-3 beside
+   * each other carry it: the attribution donuts have a direct-labelled legend,
+   * 2px gaps between arcs, per-slice tooltips and a table twin; the effort
+   * scatter direct-labels its dots and has a table twin. Deutan and protan
+   * separation is unchanged at 9.3.
+   *
+   * If a chart is ever added that spends slots 1-3 adjacently with no labels,
+   * re-step slot 1 for dark rather than shipping it.
+   *
    * The dark column is the same five hues re-stepped for the dark surface,
    * not a flip - so it needs real declarations in both dark blocks below.
    */
-  --color-chart-cat-1: #2d5b99;
+  --color-chart-cat-1: #2563eb; /* = --color-accent */
   --color-chart-cat-2: #eb6834;
   --color-chart-cat-3: #1baf7a;
   --color-chart-cat-4: #eda100;
@@ -492,7 +522,7 @@
     /* The actor ramp, re-stepped for #171717 - see the light block's note.
        All five clear 3:1 on the dark surface, so the relief rule the light
        mode leans on is slack here; the direct labels stay anyway. */
-    --color-chart-cat-1: #4d7cbd;
+    --color-chart-cat-1: #3b82f6; /* = --color-accent (dark) */
     --color-chart-cat-2: #d95926;
     --color-chart-cat-3: #199e70;
     --color-chart-cat-4: #c98500;
@@ -570,7 +600,7 @@
   --color-outgoing-text: #93c5fd;
 
   /* Mirrors the prefers-color-scheme block above. */
-  --color-chart-cat-1: #4d7cbd;
+  --color-chart-cat-1: #3b82f6; /* = --color-accent (dark) */
   --color-chart-cat-2: #d95926;
   --color-chart-cat-3: #199e70;
   --color-chart-cat-4: #c98500;

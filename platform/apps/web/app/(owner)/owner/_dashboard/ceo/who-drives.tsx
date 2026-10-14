@@ -42,6 +42,16 @@ export interface DriverCard {
   attributable: boolean;
   /** Formats a slice's raw value for the table twin. */
   format: (value: number) => string;
+  /**
+   * One sentence saying what this measure MEANS for one person, given their
+   * formatted value - "brindha made 320 calls."
+   *
+   * Per card rather than derived from the title, because the verb is the whole
+   * information: "closed", "found", "made" and "spent" are four different
+   * claims about a person, and "brindha: Calls made 320" is the card's own
+   * legend with the words rearranged. The hover exists to add the verb.
+   */
+  measureSentence: (who: string, value: string) => string;
   insight: string | null;
 }
 
@@ -81,10 +91,20 @@ export function WhoDrives({
         <span id="who-drives">Who drives the business</span>
       </BandHeading>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/*
+        `items-stretch` + `h-full` on each Panel: the four cards are one band
+        answering one question, and a grid row already makes them the same
+        height - but only if the card stretches into it. Without this the
+        insight sentence decides each card's height, so "Revenue won" ends
+        three lines shorter than "Calls made" and the four "Show as table"
+        links sit at four different heights, which reads as four unrelated
+        cards rather than one comparison.
+      */}
+      <div className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
-          <Panel key={card.key}>
+          <Panel key={card.key} className="flex h-full flex-col">
             <PanelHead title={card.title} clock={clock} />
+            {/* A column, so `mt-auto` on the insight has an axis to push along. */}
             {!card.attributable ? (
               <PanelEmpty>This view cannot attribute {card.title.toLowerCase()} yet.</PanelEmpty>
             ) : card.slices.length === 0 ? (
@@ -110,7 +130,17 @@ export function WhoDrives({
                     ))}
                   </ul>
                 </div>
-                {card.insight ? <Insight>{card.insight}</Insight> : null}
+                {/*
+                  `mt-auto` pushes the insight to the bottom of the stretched
+                  card, so the four sentences share a baseline instead of each
+                  floating under its own donut. The wrapper is what the auto
+                  margin needs to push against.
+                */}
+                {card.insight ? (
+                  <div className="mt-auto">
+                    <Insight>{card.insight}</Insight>
+                  </div>
+                ) : null}
               </>
             )}
 
@@ -156,8 +186,17 @@ export function WhoDrives({
 function Donut({ card, palette }: { card: DriverCard; palette: ActorPalette }) {
   const arcs = donutArcs(card.slices, C, 2);
   const wedges = donutWedges(card.slices);
+  // 128px (h-32), up from 96. The ring carries the card's headline figure in
+  // its hole and five arcs around it, and at 96 the centre figure was 16px
+  // with a 10px label under it - the smallest type on the page, holding the
+  // number the card exists to state. Bigger also makes the hover wedges worth
+  // having: a 5% slice of a 96px ring is a 5px target.
+  //
+  // It does NOT grow past this. The legend sits beside it inside a quarter of
+  // a four-up grid, and at 160 the two stop fitting side by side on a laptop
+  // and the legend wraps under - which costs more than the ring gains.
   return (
-    <div className="relative h-24 w-24 shrink-0">
+    <div className="relative h-32 w-32 shrink-0">
       <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
         {/*
           The empty track, in the theme's own `--color-border`. Checked rather
@@ -215,29 +254,42 @@ function Donut({ card, palette }: { card: DriverCard; palette: ActorPalette }) {
             className={`${TOOLTIP} bottom-full mb-1 ${edgeAlign(i, wedges.length)}`}
           >
             {/*
+              ── IT SAYS WHAT THE SLICE IS, NOT JUST ITS NUMBER ──────────────
+              
+              The legend beside the donut already gives the name and the share,
+              so a tooltip repeating those two would be a hover that tells you
+              nothing you were not already looking at. What is NOT on the card
+              is what the measure means for that person: the sentence under the
+              heading is the whole point of the hover.
+              
               Value first and strong, label second - the dataviz interaction
-              rule the rest of this dashboard follows. The share is the thing
-              the donut is FOR, so it leads; the raw value answers the
-              follow-up question without a second hover.
+              rule the rest of this dashboard follows.
             */}
             <span className="block font-medium text-text">
               {w.name} &middot; {sliceShare(w.fraction)}
             </span>
-            <span className="block tabular-nums">
-              {card.format(w.value)} {card.centreUnit}
+            <span className="mt-0.5 block">
+              {w.unattributed ? (
+                <>
+                  {card.format(w.value)} of the {card.centre} {card.centreUnit} in this window
+                  have no handset or owner on them, so they cannot be credited to anybody.
+                  Not a person - the absence of one.
+                </>
+              ) : (
+                <>
+                  {card.measureSentence(w.name, card.format(w.value))} That is{" "}
+                  {sliceShare(w.fraction)} of the floor&apos;s {card.centre}{" "}
+                  {card.centreUnit}.
+                </>
+              )}
             </span>
-            {w.unattributed ? (
-              <span className="mt-1 block text-text-subtle">
-                No handset or owner on these - not a person.
-              </span>
-            ) : null}
           </span>
         </span>
       ))}
 
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-base font-semibold text-text tabular-nums">{card.centre}</span>
-        <span className="text-[10px] text-text-muted">{card.centreUnit}</span>
+        <span className="text-xl font-semibold text-text tabular-nums">{card.centre}</span>
+        <span className="text-[11px] text-text-muted">{card.centreUnit}</span>
       </div>
     </div>
   );

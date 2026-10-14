@@ -417,6 +417,10 @@ export function CeoDashboard(props: CeoViewProps) {
       centreUnit: `${closed.won} ${closed.won === 1 ? "deal" : "deals"}`,
       ...driverSlices(actors, "revenue", revenue),
       format: money,
+      // The VERB is the information. "Revenue won · brindha · 60%" is the
+      // legend rearranged; "brindha closed ₹1.5K of won deals" is what the
+      // slice means.
+      measureSentence: (who, value) => `${who} closed ${value} of won deals.`,
       insight: null,
     },
     {
@@ -426,6 +430,8 @@ export function CeoDashboard(props: CeoViewProps) {
       centreUnit: noun,
       ...driverSlices(actors, "leads", data.leads.created_in_window),
       format: (v) => v.toLocaleString(),
+      measureSentence: (who, value) =>
+        `${who} created ${value} ${noun} in this window.`,
       insight: null,
     },
     {
@@ -435,6 +441,7 @@ export function CeoDashboard(props: CeoViewProps) {
       centreUnit: "calls",
       ...driverSlices(actors, "calls", data.calls.total),
       format: (v) => v.toLocaleString(),
+      measureSentence: (who, value) => `${who} made ${value} calls.`,
       insight: null,
     },
     {
@@ -444,6 +451,7 @@ export function CeoDashboard(props: CeoViewProps) {
       centreUnit: "on the phone",
       ...driverSlices(actors, "talk", data.calls.total_seconds),
       format: (v) => formatDuration(v),
+      measureSentence: (who, value) => `${who} spent ${value} on the phone.`,
       insight:
         data.calls.answered > 0
           ? `Average call ${Math.round(data.calls.total_seconds / data.calls.total)} s.`
