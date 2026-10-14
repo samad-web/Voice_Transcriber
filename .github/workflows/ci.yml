@@ -92,6 +92,26 @@ jobs:
       - name: Tenancy invariants
         run: pnpm tenancy:check
 
+      # Doc 49 P7-D. Picking the next migration number was guesswork: the
+      # directory has eight intentional holes and one number used twice, so
+      # `ls | tail -1` is wrong and nobody could tell by looking. Two people
+      # working in parallel both pick the same number, and because migrate.js
+      # keys its ledger on FILENAME the collision is silent on our side and
+      # breaks the Supabase mirror on the other.
+      #
+      # Fails on a duplicate, a new gap, a malformed name, and on a stale
+      # exception - a declared gap that is no longer a gap silently covers the
+      # next real one.
+      - name: Migration numbering
+        run: node scripts/check-migrations.js
+
+      # The mirror is GENERATED and must not be hand-edited, so a commit that
+      # changes a migration without re-running the sync leaves the two
+      # directories disagreeing - and the one the Supabase CLI reads is the
+      # stale one.
+      - name: Supabase mirror is in sync
+        run: node scripts/sync-supabase-migrations.js --check
+
   # ---------------------------------------------------------------------------
   unit:
     name: Unit tests

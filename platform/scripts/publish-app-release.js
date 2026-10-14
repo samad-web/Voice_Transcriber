@@ -101,7 +101,58 @@ async function list(pool) {
   }
 }
 
+/**
+ * Builds that must never reach a handset, and why.
+ *
+ * A denylist in code rather than a line in a memo, because the note "never
+ * publish 1.2.0/code 10" has existed since 2026-10-01 and the only thing
+ * enforcing it was somebody remembering at the moment of the rollout - which
+ * is the moment least suited to remembering anything. --publish IS the
+ * rollout: Android 12+ installs it unattended, between calls, and --unpublish
+ * stops the spread without undoing a single install.
+ *
+ * Recovering a bad build therefore needs a NEW, HIGHER versionCode carrying
+ * the old code. That asymmetry is what makes a cheap guard here worth more than
+ * a careful human there.
+ */
+const NEVER_PUBLISH = new Map([
+  [
+    10,
+    "1.2.0 / code 10 was superseded before it ever shipped (see phone-alerts-0150). " +
+      "Publish 1.2.1 / code 11 or later instead.",
+  ],
+]);
+
 async function setPublished(pool, versionCode, published) {
+  if (published) {
+    const forbidden = NEVER_PUBLISH.get(versionCode);
+    if (forbidden) throw new Error(`refusing to publish code ${versionCode}: ${forbidden}`);
+
+    /**
+     * THE GUARD THE UPLOAD PATH HAS AND THIS ONE DID NOT.
+     *
+     * `setPublished` would promote any uploaded code, including one BELOW what
+     * is already live. Every handset on the newer build would then be offered
+     * an update its installer must refuse - Android will not downgrade - so the
+     * fleet sits on a permanent update prompt that can never be satisfied, and
+     * the only way out is yet another higher versionCode. The upload path
+     * refuses this already; promoting a staged row skipped the same check.
+     */
+    const {
+      rows: [live],
+    } = await pool.query(
+      "SELECT version_code, version_name FROM app_releases WHERE published AND version_code > $1 ORDER BY version_code DESC LIMIT 1",
+      [versionCode],
+    );
+    if (live) {
+      throw new Error(
+        `code ${versionCode} is OLDER than the live v${live.version_name} (code ${live.version_code}). ` +
+          "Android cannot downgrade, so this would offer the fleet an update every installer refuses. " +
+          "To roll back, build a NEW higher versionCode carrying the old code.",
+      );
+    }
+  }
+
   const { rows } = await pool.query(
     `UPDATE app_releases SET published = $2 WHERE version_code = $1
       RETURNING version_code, version_name`,
@@ -111,7 +162,13 @@ async function setPublished(pool, versionCode, published) {
   console.log(
     `${published ? "Published" : "Unpublished"} v${rows[0].version_name} (code ${rows[0].version_code})`,
   );
-  if (!published) {
+  if (published) {
+    console.log(
+      "This IS the rollout: Android 12+ installs it unattended, between calls, within ~6h.\n" +
+        "There is no staged rollout and no canary. If this build is wrong, --unpublish stops\n" +
+        "the spread but undoes no install - recovery needs a NEW higher versionCode.",
+    );
+  } else {
     console.log(
       "Note: handsets that already installed it keep it - Android cannot downgrade.",
     );
@@ -139,6 +196,14 @@ async function main() {
       `cannot determine version from "${path.basename(file)}".\n` +
         "Name it Aura-<versionName>-<versionCode>.apk, or pass --version-code and --version-name.",
     );
+  }
+
+  const forbidden = NEVER_PUBLISH.get(versionCode);
+  if (forbidden && has("publish")) {
+    throw new Error(`refusing to publish code ${versionCode}: ${forbidden}`);
+  }
+  if (forbidden) {
+    console.warn(`WARNING: code ${versionCode} is on the never-publish list. ${forbidden}`);
   }
 
   const bytes = fs.readFileSync(file);

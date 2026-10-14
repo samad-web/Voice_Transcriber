@@ -1,0 +1,228 @@
+# Staging: the environment where a migration runs for the FIRST time (doc 49 P7-B).
+#
+# ── WHAT IS BEING FIXED ──────────────────────────────────────────────────────
+#
+# There was no environment between a laptop and four paying customers. "staging"
+# appeared zero times in DEPLOYMENT.md, which means production has been the first
+# real execution of every migration this project has ever written. The recorded
+# costs of that:
+#
+#   * 0149 was flagged NEVER RUN with a note that running the API before the
+#     migration 500s every quotation read;
+#   * doc 39's migrations needed a dedicated "run them against a real database
+#     and fix what that found" commit (c1355981);
+#   * 0201 shipped "reviewed, not verified" and its first real execution found
+#     three defects, two of them fatal to the feature.
+#
+# None of those were carelessness. They are what a manual deploy with no staging
+# produces on a long enough timeline.
+#
+# ── WHY A SECOND COMPOSE PROJECT AND NOT A SECOND VPS ────────────────────────
+#
+# A second VPS is better and costs money monthly. This costs an afternoon and
+# some disk, and it answers the question that actually matters: does this
+# migration apply, in order, to a database shaped like production's? Everything
+# else staging is normally for - load, TLS, real FCM, a real Razorpay webhook -
+# is explicitly out of scope here and noted as such below.
+#
+# ── HOW IT IS KEPT AWAY FROM PRODUCTION ──────────────────────────────────────
+#
+# Four independent separations, because one is not enough when the two stacks
+# share a kernel:
+#
+#   1. `name: aura-staging` - a different compose project, so `docker compose
+#      down` in one cannot touch the other's containers.
+#   2. Its own volumes (`staging-*`), so there is no path by which it writes to
+#      `miniodata` or the production database's data directory.
+#   3. Its own Postgres IN THIS FILE. Production's database is a separate
+#      compose project (`aura-supabase-db`) that this file never references, so
+#      a mis-set DATABASE_URL cannot reach it - it is not on this network.
+#   4. Ports on 192xx, nowhere near production's 180xx, and bound to loopback.
+#      The port IS the safety mechanism, the same argument
+#      docker-compose.test.yml makes at length for its own odd ports.
+#
+#   docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
+#   docker compose -f docker-compose.staging.yml --env-file .env.staging \
+#     --profile setup run --rm migrate
+#
+# See DEPLOYMENT.md §12 for the restore-production-into-staging recipe, which is
+# also P4's restore rehearsal - one piece of work that satisfies both.
+name: aura-staging
+
+x-staging-node: &staging-node
+  build:
+    context: .
+    dockerfile: docker/node.Dockerfile
+  # A DIFFERENT image tag from production's `aura-node:latest`. Sharing the tag
+  # would mean a staging build silently replacing the image production restarts
+  # into - a staging environment that can break production is worse than none.
+  image: aura-staging-node:latest
+  env_file: .env.staging
+  environment:
+    BUILD_SHA: ${BUILD_SHA:-}
+    # Loud, and in every log line this stack produces. The single most expensive
+    # mistake available here is running a command against the wrong stack.
+    AURA_ENVIRONMENT: staging
+  restart: unless-stopped
+
+services:
+  postgres:
+    # Plain Postgres of the same major version production runs. Not the Supabase
+    # image, for the reason bin/restore-test.sh documents at length: the Supabase
+    # image ships its own older `auth` tables and restoring a dump into it
+    # silently drops every auth.users row. A plain server lets the dump create
+    # every schema itself.
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${STAGING_PG_USER:-aura}
+      POSTGRES_PASSWORD: ${STAGING_PG_PASSWORD:?set STAGING_PG_PASSWORD in .env.staging}
+      POSTGRES_DB: ${STAGING_PG_DB:-callintel}
+    ports:
+      # Loopback only. A staging database reachable from the internet is a
+      # production incident waiting for somebody to restore real data into it -
+      # which §12 tells you to do.
+      - "127.0.0.1:19432:5432"
+    volumes:
+      - staging-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STAGING_PG_USER:-aura} -d ${STAGING_PG_DB:-callintel}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${STAGING_RABBITMQ_USER:-aura}
+      RABBITMQ_DEFAULT_PASS: ${STAGING_RABBITMQ_PASSWORD:?set STAGING_RABBITMQ_PASSWORD}
+    ports:
+      - "127.0.0.1:19672:5672"
+    volumes:
+      - staging-rabbitdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${STAGING_S3_ACCESS_KEY_ID:-aura_minio}
+      MINIO_ROOT_PASSWORD: ${STAGING_S3_SECRET_ACCESS_KEY:?set STAGING_S3_SECRET_ACCESS_KEY}
+    ports:
+      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19001:9001"
+    volumes:
+      - staging-miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000
+        $${STAGING_S3_ACCESS_KEY_ID:-aura_minio} $$STAGING_S3_SECRET_ACCESS_KEY &&
+      mc mb --ignore-existing local/aura-recordings &&
+      mc mb --ignore-existing local/aura-exports &&
+      echo 'staging buckets ready'"
+    environment:
+      STAGING_S3_ACCESS_KEY_ID: ${STAGING_S3_ACCESS_KEY_ID:-aura_minio}
+      STAGING_S3_SECRET_ACCESS_KEY: ${STAGING_S3_SECRET_ACCESS_KEY:?set STAGING_S3_SECRET_ACCESS_KEY}
+    restart: "no"
+
+  api:
+    <<: *staging-node
+    command: ["node", "apps/api/dist/main.js"]
+    ports:
+      - "127.0.0.1:19081:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    <<: *staging-node
+    command: ["node", "apps/worker/dist/main.js"]
+    environment:
+      BUILD_SHA: ${BUILD_SHA:-}
+      AURA_ENVIRONMENT: staging
+      # ── NOTHING LEAVES STAGING ────────────────────────────────────────────
+      #
+      # Staging holds a restore of production, which means real customers'
+      # numbers, real leads and real CRM credentials. The worker is the only
+      # process here that SENDS anything - WhatsApp, email, CRM deliveries, FCM
+      # pushes, Razorpay calls - so every one of those is stubbed or switched
+      # off, here, in the compose file rather than in a runbook step somebody
+      # has to remember.
+      #
+      # Doc 49 P9 names the worst bug on the revenue path as taking money twice.
+      # The worst bug available HERE is messaging a real customer from a test
+      # environment, and `ask-before-messaging-users` is the standing rule it
+      # would break.
+      ASR_STUB: "1"
+      ANALYZE_STUB: "1"
+      CRM_DISPATCH_ENABLED: "false"
+      OUTBOUND_MESSAGING_ENABLED: "false"
+      FCM_ENABLED: "false"
+      SARVAM_API_KEY: ""
+      GEMINI_API_KEY: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_BASE_PATH: ${STAGING_CONSOLE_BASE_PATH:-/admin}
+        NEXT_PUBLIC_SUPABASE_URL: ${STAGING_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${STAGING_SUPABASE_ANON_KEY:-}
+    image: aura-staging-web:latest
+    env_file: .env.staging
+    environment:
+      BUILD_SHA: ${BUILD_SHA:-}
+      AURA_ENVIRONMENT: staging
+    ports:
+      - "127.0.0.1:19080:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  migrate:
+    <<: *staging-node
+    # THE REASON THIS WHOLE FILE EXISTS. A migration runs here first, against a
+    # database shaped like production's, and `verify-rls.js` runs after it -
+    # which is what catches a new tenant table without a policy before it
+    # reaches a customer.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        node packages/db/migrate.js &&
+        node packages/db/verify-rls.js --structural-only
+    profiles: ["setup"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  staging-pgdata:
+  staging-rabbitdata:
+  staging-miniodata:

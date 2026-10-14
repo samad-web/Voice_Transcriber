@@ -103,6 +103,46 @@ release build.
 | `.env.production.example` | Every production variable, annotated |
 | `supabase/migrations/` | Generated from `packages/db/migrations` (`pnpm db:supabase:sync`) |
 
+## Picking a migration number
+
+**Do not use `ls | tail -1`, and do not query production.** Run:
+
+```bash
+node scripts/check-migrations.js          # the full picture
+node scripts/check-migrations.js --next   # just the number
+```
+
+The numbering has history in it and the history is not guessable by looking.
+`check-migrations.js` is the single answer, and it runs in CI so a bad number
+fails a push rather than a deploy.
+
+**Intentionally absent: 0164, 0167–0169, 0183, 0189–0191.** Some were renumbered
+during the CRM branch merge, some were superseded before they were ever applied.
+They are *not* available to reuse — production's `schema_migrations` keys on
+filename and may still name a file that once used one.
+
+**One number is used twice: 0083** (`0083_asr_diarization.sql` and
+`0083_lead_temperature.sql`). This matters in exactly one place and it is worth
+understanding before anybody "tidies" it:
+
+- **Our runner is fine with it.** `packages/db/migrate.js` records applied
+  migrations by full filename, so both applied, in filename order, and
+  production's ledger holds both names.
+- **The Supabase mirror is not.** `sync-supabase-migrations.js` derives the
+  Supabase version from the *number*, so both map to `20260101000083`, and the
+  Supabase CLI keys its own ledger by version. **`supabase db push` against
+  `supabase/migrations/` cannot apply both** — it will silently apply one. The
+  sync script prints a warning saying so on every run.
+- **Renumbering is the risky fix, not the safe one.** Renaming
+  `0083_lead_temperature.sql` makes production's recorded filename match no
+  file, so `migrate.js` re-runs it on the next deploy — and it backfills
+  `leads.temperature` across four live tenants. Doing it safely means renaming
+  the file *and* updating `schema_migrations` in the same window, deliberately,
+  by somebody who owns the database.
+
+Until that happens: apply migrations with `packages/db/migrate.js` (what
+`deploy.sh --migrate` does), not with the Supabase CLI.
+
 ## CRM connectors
 
 A connector is data, not code. `packages/shared/src/crm-providers.ts` holds the

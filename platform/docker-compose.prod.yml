@@ -44,6 +44,11 @@ x-node-image: &node-image
     dockerfile: docker/node.Dockerfile
   image: aura-node:latest
   env_file: .env.production
+  # NOTE: BUILD_SHA is NOT set here, and deliberately not. A service that
+  # declares its own `environment:` REPLACES the merged one rather than adding
+  # to it, so an anchor-level value would silently reach `migrate` and miss
+  # `api` and `worker` - the two that matter. It is therefore repeated in each
+  # service below, which is the honest cost of YAML merge semantics.
   restart: unless-stopped
 
 services:
@@ -83,6 +88,19 @@ services:
     <<: *node-image
     command: ["node", "apps/api/dist/main.js"]
     environment:
+      # ── WHICH COMMIT IS ACTUALLY RUNNING ────────────────────────────────
+      #
+      # Doc 49 P7 names "answerable only by SSH" as the reason deploy drift
+      # survives, and `staged-vs-worktree-deploy-trap` is the measured case: a
+      # parallel session fixed a file between `git add` and `git commit`, the
+      # stale copy shipped, and the production worker crash-looped with no way
+      # to tell from outside what was in the image.
+      #
+      # `deploy.sh` exports this from the tree it is deploying. The worker
+      # writes it to `platform_heartbeats` (0203), error reports carry it as a
+      # release, and deploy.sh asserts the running containers report the sha it
+      # just built. Empty default, so a hand-run `docker compose up` still works.
+      BUILD_SHA: ${BUILD_SHA:-}
       # The console's public address, which the OAuth redirect URI is built on
       # (apps/api/src/modules/connections/oauth.ts). Derived from the SAME two
       # variables the web image's NEXT_PUBLIC_BASE_PATH build arg uses below,
@@ -126,6 +144,19 @@ services:
     # the plan, not secrets. Raise the chunk further only with evidence - the
     # 10 it replaces was measured, not guessed.
     environment:
+      # ── WHICH COMMIT IS ACTUALLY RUNNING ────────────────────────────────
+      #
+      # Doc 49 P7 names "answerable only by SSH" as the reason deploy drift
+      # survives, and `staged-vs-worktree-deploy-trap` is the measured case: a
+      # parallel session fixed a file between `git add` and `git commit`, the
+      # stale copy shipped, and the production worker crash-looped with no way
+      # to tell from outside what was in the image.
+      #
+      # `deploy.sh` exports this from the tree it is deploying. The worker
+      # writes it to `platform_heartbeats` (0203), error reports carry it as a
+      # release, and deploy.sh asserts the running containers report the sha it
+      # just built. Empty default, so a hand-run `docker compose up` still works.
+      BUILD_SHA: ${BUILD_SHA:-}
       SARVAM_MAX_TOKENS: "16384"
       SARVAM_LABEL_CHUNK: "30"
     depends_on:

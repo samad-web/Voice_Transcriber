@@ -25,10 +25,39 @@ const files = fs.readdirSync(SRC).filter((f) => f.endsWith(".sql")).sort();
 fs.mkdirSync(OUT, { recursive: true });
 
 const expected = new Map();
+/**
+ * Which source files claimed each version.
+ *
+ * ── A COLLISION HERE IS NOT COSMETIC ────────────────────────────────────────
+ *
+ * The version is derived from the NUMBER alone, and our own runner
+ * (`packages/db/migrate.js`) keys its ledger on the full FILENAME. So two
+ * migrations sharing a number are fine for us - both apply - and broken here:
+ * the Supabase CLI keys `supabase_migrations.schema_migrations` by VERSION, so
+ * one of the two is silently not applied by `supabase db push`.
+ *
+ * It is reported rather than thrown, because there is already one such pair
+ * (0083) whose safe resolution is a deliberate ledger update rather than a
+ * rename - see `scripts/check-migrations.js` for the full argument. Throwing
+ * would make this script unrunnable until that decision is taken, which would
+ * only mean the mirror stops being updated at all.
+ */
+const claimedBy = new Map();
 for (const file of files) {
   const m = /^(\d{4})_(.+)\.sql$/.exec(file);
   if (!m) throw new Error(`migration ${file} must be named NNNN_name.sql`);
   const [, seq, name] = m;
+  const prior = claimedBy.get(seq);
+  if (prior) {
+    console.error(
+      `WARNING: ${prior} and ${file} both map to Supabase version ${BASE}${seq}.\n` +
+        "  Our runner applies both (it keys on filename); the Supabase CLI keys on\n" +
+        "  VERSION and will apply only one. Do not run `supabase db push` against this\n" +
+        "  directory until that is resolved - see platform/README.md.",
+    );
+  } else {
+    claimedBy.set(seq, file);
+  }
   expected.set(`${BASE}${seq}_${name}.sql`, fs.readFileSync(path.join(SRC, file), "utf8"));
 }
 

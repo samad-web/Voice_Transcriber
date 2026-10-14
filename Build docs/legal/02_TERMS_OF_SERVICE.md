@@ -73,6 +73,44 @@ level agreement, ask us and we will negotiate one as part of your order.
 > it. An uptime promise you cannot measure is a breach of contract waiting to be
 > discovered.
 
+### 4.1 Backups, and how much you could lose
+
+We back the Service up, and we would rather tell you the real numbers than let you
+assume better ones.
+
+- **We take a full backup of the database once a day.** If we had to restore from
+  it, you could lose up to **24 hours** of calls, transcripts and CRM records -
+  whatever was created since the last backup ran.
+- **Restoring the Service is a manual operation.** We do not run a standby you can
+  be switched to, so a total loss of the server would take **hours, and could take
+  longer than a day**, to rebuild from backups.
+- **Call audio is backed up separately from the database.** In the worst case a
+  transcript can survive while its recording does not.
+- **Backups are not an archive.** They exist to recover the Service, not to retrieve
+  a single call you deleted. Deletion is covered by section 6 and by your retention
+  setting.
+
+These are our current operating targets, not a contractual guarantee, and the same
+reasoning as above applies: we would rather state a number we meet than promise one
+we cannot measure. If your business needs a committed recovery time, or a shorter
+recovery point than a day, ask us - both are achievable and both cost money, so they
+belong in an order rather than in a free-tier promise.
+
+> **Note for review, not for publication.** These numbers are measured, not
+> aspirational: nightly at 02:15 (`supabase/selfhost/bin/backup.sh`), recordings
+> mirrored after it, and a hand-rebuilt VPS. Three things must be true before this
+> section is defensible, and doc 49 P4 tracks them:
+>
+> 1. the off-box copy is actually configured (`OFFSITE_*` set, not merely
+>    supported) - otherwise the honest RPO is "everything", because the backups
+>    die with the server;
+> 2. `bin/restore-test.sh --offsite` has succeeded at least once, on different
+>    hardware, with nothing but the dump and the passphrase; and
+> 3. the date of that restore is written in DEPLOYMENT.md §11.
+>
+> Until all three hold, do not let a customer read the paragraph above as a
+> commitment. A backup nobody has restored is a belief, not a backup.
+
 ## 5. What the Service does not promise
 
 Aura transcribes speech and extracts structured information using automated

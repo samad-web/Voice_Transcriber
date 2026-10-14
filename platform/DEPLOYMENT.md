@@ -395,9 +395,76 @@ service.
 
 ---
 
+## 5b. Publishing a build to the fleet (Build docs/49 P3)
+
+**Uploading is not publishing, and this is where six weeks of work went missing.** On 2026-10-14
+the newest PUBLISHED release was 1.1.4 / code 8 from 2026-09-18, while `CallRecorderApp/dist/`
+held a signed `Aura-1.2.1-11.apk` built on 2026-10-12. Four features - missed-call capture
+(0133/0134), phone alerts (0150), live pairing (0124) and the whole client half of attendance -
+were built, server-deployed, and on zero phones. The update channel had never been offered the
+build, so no handset could get it.
+
+`scripts/alerts.js` now fires `fleet_behind` when a built APK is unpublished or when devices are
+two or more builds behind. That closes the *noticing*. The sequence below is the *doing*.
+
+```bash
+# 1. UPLOAD. No --publish. Nothing is offered to any phone by this step.
+docker cp CallRecorderApp/dist/Aura-1.2.1-11.apk aura-api-1:/tmp/
+docker exec aura-api-1 node scripts/publish-app-release.js /tmp/Aura-1.2.1-11.apk   --notes "Missed-call capture, phone alerts, live pairing, attendance"
+
+# 2. CONFIRM what is staged against what is live.
+docker exec aura-api-1 node scripts/publish-app-release.js --list
+
+# 3. INSTALL IT ON ONE HANDSET BY HAND and use it. This is the only safety there is.
+#    Verify, concretely: a missed call appears as a NO_AUDIO row within minutes; a new
+#    lead raises a lock-screen alert; the QR pairing dialog flips to Connected by itself.
+
+# 4. ONLY THEN. This is the rollout.
+docker exec aura-api-1 node scripts/publish-app-release.js --promote 11
+```
+
+Three traps, two of them now enforced by the script rather than remembered:
+
+1. **`--promote` IS the rollout.** Android 12+ installs it unattended, between calls, within about
+   six hours. There is no staged rollout and no canary — the flag flips and the fleet moves. Step 3
+   is not optional.
+2. **Rollback is asymmetric.** `--unpublish` stops the spread; it does not undo an install, because
+   Android will not downgrade. Recovering a bad build needs a **new, higher** `versionCode`
+   carrying the old code.
+3. **Never publish 1.2.0 / code 10** (`phone-alerts-0150`). The script now refuses it by name, and
+   refuses to promote any code older than the one already live — which would otherwise offer the
+   fleet an update every installer must reject, leaving a permanent un-satisfiable update prompt.
+
+**Still outstanding, and not a code problem:** distribution is sideload, so Play Protect warns on
+every install and the test Honor handset is still unpaired. The cheapest real fix is a Play
+**internal testing track** — about a day plus $25, kills the warning for up to 100 testers, and
+removes the ugliest moment in onboarding. Closed testing needs a data-safety form whose honest
+answer is "yes, we record calls"; a production listing draws policy review on call recording and
+should be budgeted for a rejection and a resubmit.
+
+---
+
 ## 6. ASR / analyze provider
 
-Precedence is `ASR_STUB`/`ANALYZE_STUB` → **Sarvam** → **Gemini**. Set `SARVAM_API_KEY` and both
+Precedence is `ASR_STUB`/`ANALYZE_STUB` → **Sarvam** → **Gemini**, and since migration 0202 that
+sentence is true for the first time. It used to describe the intent while the code chose on KEY
+PRESENCE alone: `sarvamAsrConfigured()` answered "is a key set", so a Sarvam account with no credit
+kept every call for 62 days while a funded Gemini key sat configured and idle. Precedence now runs
+over provider HEALTH — a vendor that refuses us is parked in `asr_provider_health` and skipped
+exactly as if its key were unset. See `apps/worker/src/pipeline/asr-route.ts`.
+
+```bash
+ASR_PROVIDER_ORDER=gemini,sarvam     # optional: make Gemini primary without a code change
+ASR_PREFLIGHT_INTERVAL_MS=86400000   # full credit pre-flight, daily
+ASR_PARKED_PROBE_INTERVAL_MS=900000  # re-probe a PARKED vendor every 15 min, so a top-up
+                                     # is honoured in minutes rather than after the cooldown
+```
+
+The worker's boot banner now reports which providers are **usable**, not which are configured —
+`asr[sarvam UNUSABLE (provider_out_of_credit) | gemini:gemini-3.5-flash inline]`. A line reading
+`← NOTHING WILL TRANSCRIBE` means every configured vendor is parked.
+
+Set `SARVAM_API_KEY` and both
 stages route there; leave it unset and both fall back to Gemini. `ANALYZE_PROVIDER`
 (`auto`|`gemini`|`sarvam`) decouples the two, so analyze can sit on Gemini while ASR stays on
 Sarvam — useful because they have very different failure modes.
@@ -808,3 +875,199 @@ gh workflow run uptime.yml -f force_failure=true
 **An alert nobody has ever seen fire has not been tested.** Each of the four above should land in
 the channel; `--list` should then show the condition clearing and a `RESOLVED` line should be posted
 exactly once.
+
+---
+
+## 11. Backups, and the restore that proves them (Build docs/49 P4)
+
+### 11.1 The state this section exists to change
+
+As measured on 2026-10-14: the nightly database backup was running and succeeding, and
+`OFFSITE_ENDPOINT`, `OFFSITE_BUCKET` and `OFFSITE_PASSPHRASE` were all **unset**. The off-box copy
+was built, reviewed, committed — and never configured. So one VPS held the only Postgres, every
+recording in MinIO, and every backup of both. Recordings had no backup at all.
+
+That is the largest single-point-of-loss in the system, and the first part of the fix is filling in
+four environment variables.
+
+### 11.2 Turn the off-box copy on
+
+In `supabase/selfhost/.env.selfhost`:
+
+```bash
+OFFSITE_ENDPOINT=https://s3.<region>.<provider>.com
+OFFSITE_BUCKET=aura-db-backups
+OFFSITE_ACCESS_KEY=...
+OFFSITE_SECRET_KEY=...
+OFFSITE_PASSPHRASE=...            # the dump is AES256-encrypted before it leaves
+OFFSITE_RETAIN_DAYS=90
+
+# recordings (bin/backup-recordings.sh) — a mirror, not a tar
+RECORDINGS_OFFSITE_BUCKET=aura-recordings-backup
+RECORDINGS_OFFSITE_SSE=1          # you are asserting the bucket is private and encrypted at rest
+```
+
+**Pick a target that is not this VPS and not this provider.** Provider-correlated failure — a
+billing dispute, an account suspension, a regional outage — is the scenario that matters; a second
+bucket at the same provider does not survive it.
+
+**Write `OFFSITE_PASSPHRASE` down wherever `JWT_SECRET` and `CRM_SECRET_KEY` live.** An encrypted
+backup whose passphrase died with the server is a tidy way to lose the data twice.
+
+```cron
+15 2 * * *  cd /opt/aura/platform/supabase/selfhost && bash bin/backup.sh            >> /var/log/aura-backup.log 2>&1
+45 2 * * *  cd /opt/aura/platform/supabase/selfhost && bash bin/backup-recordings.sh >> /var/log/aura-backup.log 2>&1
+```
+
+Recordings run **after** the database, in their own script, deliberately: the dump is tens of MB
+and finishes in seconds, the recordings are 61 GB and growing. Folding them together would mean a
+`set -e` on one object transfer abandoning the backup of the thing you cannot rebuild.
+
+### 11.3 Rehearse the restore — this is the part that converts belief into fact
+
+```bash
+bash bin/restore-test.sh              # the ON-BOX copy: proves pg_dump works
+bash bin/restore-test.sh --offsite    # the OFF-BOX copy: proves you survive losing the machine
+```
+
+Only the second one proves anything about disaster recovery. It pulls the encrypted copy, decrypts
+it with `OFFSITE_PASSPHRASE` — which is itself a test nobody else runs — and restores into a
+throwaway Postgres on `--network none` that is removed on every exit path.
+
+It checks five things, and the last two were added because they are the ones people skip:
+
+1. `pg_restore` reports no unexpected errors (`pg_net` and `supabase_vault` are expected to fail —
+   they are Supabase-only extensions and plain Postgres cannot provide them);
+2. row counts match the manifest taken at backup time (orgs, calls, `auth.users`, migrations);
+3. every `org_id` table still has FORCE RLS — a restore can return the rows and lose the tenant
+   boundary, and row counts alone would pass;
+4. **`max(name)` from `schema_migrations`** — not the count. The count can be right while the
+   database is the wrong one: a dump taken mid-deploy, or from the *other* Supabase stack on this
+   box (`supabase-db` belongs to an unrelated product; Aura's is `aura-supabase-db`);
+5. **one sealed credential actually decrypts** with the current `CRM_SECRET_KEY`. Every CRM API
+   key, OAuth client secret and messaging token is AES-256-GCM sealed under that key, which lives in
+   `.env.production` and *not* in the dump. A restored database full of credentials nobody can
+   decrypt is a restored database you cannot operate — and you find out weeks later, as
+   unexplained 401s from a customer's CRM.
+
+Export `CRM_SECRET_KEY` before running it, or check 5 reports that it could not be proved.
+
+### 11.4 The record
+
+**A backup nobody has restored is a belief, not a backup.** Write the date here each time, so the
+claim in the Terms of Service §4.1 has evidence behind it:
+
+| Date | Source | Hardware | Result |
+|---|---|---|---|
+| _not yet_ | — | — | **No restore has ever been performed.** `bin/restore-test.sh` has existed, unrun, since the Supabase cutover. |
+
+The target to beat: a restore from off-box media, on a machine that is not this VPS, with nothing
+carried over but the dump and the passphrase.
+
+### 11.5 What is still a known loss
+
+- **RPO is up to 24 hours** (nightly at 02:15) and **RTO is hours to days** (a hand-rebuilt VPS).
+  Both are now stated in the Terms of Service §4.1 rather than left to a customer's assumption.
+- **The recordings mirror has no history.** It is the current state, which is correct for immutable
+  objects, and it means a local deletion bug would propagate on the next run — `--remove` stays off
+  precisely so it does not.
+- **The mirror never deletes.** When the retention job removes audio past a tenant's window, the
+  offsite copy keeps it until the target's own lifecycle rule expires it. Set that rule to match the
+  longest retention tier sold, or the bill grows for data a customer was told was deleted.
+
+---
+
+## 12. Release discipline and staging (Build docs/49 P7)
+
+### 12.1 What was wrong, and why it is a defect *generator*
+
+Measured 2026-10-14: production ran commit `eded853` on branch
+`crm-connectors-and-console-auth` — a feature branch from an old phase that became the release line
+by accident — while `main` sat **29 commits behind, 0 ahead**, eight branches were live, and two
+migrations in the tree (`0199`, `0200`) were not applied. "What is in production" was answerable
+only by SSH, which is precisely how drift survives.
+
+There was also **no environment between a laptop and four paying customers**, so production has
+been the first real execution of every migration this project has written. That is not carelessness;
+it is what a manual multi-branch deploy with no staging produces on a long enough timeline.
+
+### 12.2 Deploy, with the guards
+
+`./deploy.sh` now refuses four things it used to allow:
+
+| Refuses | Because |
+|---|---|
+| a dirty working tree | the image is built from the **tree**, not the commit. A parallel session fixed a file between `git add` and `git commit`, the stale copy shipped, and the production worker crash-looped. |
+| a tree out of sync with origin | so "what is in production" is answerable from the remote, not only from the box |
+| a pending migration without `--migrate` | `0199`/`0149`: code in front of its own schema 500s one route while everything else reports healthy. The tree is compared against `schema_migrations`; it is detected, not remembered. |
+| a deploy it cannot verify afterwards | "compose exited 0" is not a deploy |
+
+`--force` exists and prints a warning. Use it when you mean it.
+
+After the restart it asserts, and exits non-zero on any of them:
+
+- the running `api` and `worker` containers report the `BUILD_SHA` this script just built — a
+  container that was *not recreated* keeps the old value, which is the case worth catching;
+- the API health path answers on the loopback port nginx proxies to;
+- `max(schema_migrations)` matches the newest migration in the tree;
+- and one business number — whether any ASR provider is parked. `/health` was green for the 62 days
+  the product transcribed 4% of its calls, so a deploy reporting only "the process is up" reports
+  exactly what it reported throughout that outage.
+
+**One deploy branch.** Pick it and delete the rest once merged. The convention this runbook assumes
+is: **`main` is what deploys**, everything merges there, and `deploy.sh` enforces sync with its
+upstream. If the long-lived feature branch is kept as the release line instead, rename it `release`
+so the name says what it is — the current state, where prod tracks a branch named after a finished
+phase, is the problem rather than a detail of it.
+
+### 12.3 Picking a migration number
+
+```bash
+node scripts/check-migrations.js --next
+```
+
+In CI as well, so a duplicate or a new gap fails a push rather than a deploy. The eight intentional
+holes and the one duplicated number (0083) are documented in `platform/README.md` — including why
+renumbering 0083 is the *risky* fix, not the safe one.
+
+### 12.4 Staging
+
+```bash
+cp .env.production .env.staging     # then change every domain, port and credential
+docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build
+docker compose -f docker-compose.staging.yml --env-file .env.staging \
+  --profile setup run --rm migrate          # migrate + verify-rls, in one command
+```
+
+A second compose project on the same box: its own Postgres, RabbitMQ, MinIO and volumes, ports on
+`127.0.0.1:19xxx`, and a different image tag (`aura-staging-node:latest`) so a staging build cannot
+replace the image production restarts into. Production's database is a *separate compose project*
+that this file never references, so a mis-set `DATABASE_URL` cannot reach it.
+
+**The worker here sends nothing.** `ASR_STUB`, `ANALYZE_STUB`, `CRM_DISPATCH_ENABLED=false`,
+`OUTBOUND_MESSAGING_ENABLED=false`, `FCM_ENABLED=false`, and both provider keys blank — set in the
+compose file rather than in a runbook step somebody has to remember. Staging holds a restore of
+production, so it holds real customers' numbers and real CRM credentials; the worst bug available
+here is messaging a real customer from a test environment.
+
+**Restore production into it — which is also P4's restore rehearsal.** One piece of work, two
+problems:
+
+```bash
+# in supabase/selfhost/
+bash bin/restore-test.sh --offsite        # proves the backup; leaves nothing behind
+# then, for a staging database shaped like production's:
+docker exec -i aura-staging-postgres-1 pg_restore -U aura -d callintel --no-owner --no-acl \
+  < /path/to/db-<stamp>.dump
+```
+
+Then run the migration you are about to deploy, against that. **That is the whole point of this
+environment**: a migration whose first real execution is in production is a migration nobody has
+tested, and three separate migrations in this project have proved it.
+
+### 12.5 What staging deliberately is not
+
+Not a load test, not TLS, not real FCM, not a real Razorpay webhook, and not a performance
+reference — one box, shared CPU, stubbed providers. It answers exactly one question well: *does
+this change apply, in order, to data shaped like production's?* Claiming more for it would be the
+same mistake as a health check that cannot see the business failing.
