@@ -1113,3 +1113,111 @@ Not a load test, not TLS, not real FCM, not a real Razorpay webhook, and not a p
 reference — one box, shared CPU, stubbed providers. It answers exactly one question well: *does
 this change apply, in order, to data shaped like production's?* Claiming more for it would be the
 same mistake as a health check that cannot see the business failing.
+
+## 13. Operator hierarchy: who may see which client (Build docs/49 P13)
+
+Until now every platform operator saw every client. Doc 49 P13 asks for a hierarchy — the root
+sees the whole fleet, a superadmin sees the clients they onboarded. This section is what shipped,
+what deliberately did not, and the order the switch must be thrown in.
+
+### 13.1 Read this before you trust it
+
+**This is a console-tier filter, not containment of a hostile superadmin.**
+
+Every operator holds — or can reach — `ADMIN_API_KEY`, which is cross-tenant by design and takes
+its tenant from an `x-org-id` header. A filtered superadmin can therefore still read a
+root-onboarded client by calling the API directly with that key. What the filter buys is
+organisational hygiene: account managers stay out of each other's books and the console stays
+legible.
+
+So the console says **"Showing the clients you onboarded"**, never "only you can see this".
+`operator-scope.spec.ts` asserts that the caption never claims exclusivity, because a false
+promise of privacy is worse than an honest absence of one.
+
+Making it a real boundary needs the operator console to stop using one shared admin key for
+cross-tenant reads and move onto per-user sessions. P5-A (the API verifying a Supabase JWT and
+pinning the org from `users.sso_subject` → `memberships`) is built and closes this for a caller
+presenting a *session*. The console is not that caller yet.
+
+### 13.2 What the plan asked for that was NOT built, and why
+
+Doc 49 P13b asks for `platform_operators.role text CHECK (role IN ('root','superadmin'))`. That
+column is deliberately absent, and its absence is a correction rather than a shortfall.
+
+The root is resolved from `PLATFORM_ROOT_OPERATOR_EMAIL` in the environment — by `isMax()` in the
+web tier and by `OperatorsController.root()` in the API — and migration 0089's header argues for
+that at length: *the root is what authorises changes to `platform_operators`, so a root that lived
+in that table could be deleted by anything that reached the table and replaced with an attacker's
+address.* Adding `role = 'root'` would move the platform's ownership into a row any write path can
+reach. The worst case today is a table full of unwanted operators that the real root can still
+delete; the worst case with that column is a platform with a new owner.
+
+What *was* missing is the other half: nothing recorded **who onboarded a client**, so "a
+superadmin sees the clients they onboarded" could not be expressed at all. Migration 0206 adds it.
+
+### 13.3 The sequence. Do not reorder it.
+
+`OPERATOR_SCOPE_ENABLED` defaults to **off**, and that default is load-bearing. 0206's backfill
+leaves every pre-existing tenant unattributed, so switching the filter on first makes every live
+client vanish from every superadmin's console at once — and a console that suddenly shows nothing
+is indistinguishable from an outage.
+
+```bash
+# 1. DEPLOY with the switch off. The attribution columns start recording; nothing filters.
+#    New clients are attributed from this moment: an operator-provisioned tenant records the
+#    operator, and a self-serve signup records 'self_serve' with no operator.
+
+# 2. SEE WHO IS UNATTRIBUTED. The /instances table has an "Onboarded by" column; this is the
+#    same question in one line.
+docker exec -i aura-supabase-db psql -U postgres -d postgres -c \
+  "SELECT name, onboarded_by_operator, onboarded_by_role
+     FROM organizations WHERE status <> 'deleted' ORDER BY onboarded_by_role NULLS FIRST, name;"
+
+# 3. ATTRIBUTE THE EXISTING CLIENTS, BY HAND, one statement per client. Both columns together:
+#    0206's CHECK refuses a half-written record, and the address must be lower-cased.
+docker exec -i aura-supabase-db psql -U postgres -d postgres -c \
+  "UPDATE organizations
+      SET onboarded_by_operator = 'asha@example.com', onboarded_by_role = 'superadmin',
+          onboarded_at = COALESCE(onboarded_at, created_at)
+    WHERE name = 'Sirah Digital';"
+#    Leave a client unattributed on purpose if no superadmin should manage it — unattributed
+#    means ROOT-ONLY, which is the conservative reading and never an accident.
+
+# 4. ONLY THEN throw the switch, and confirm with a superadmin's own login — not the root's,
+#    which is unfiltered by definition and will show you nothing wrong.
+OPERATOR_SCOPE_ENABLED=1
+```
+
+### 13.4 What is scoped, and what is honestly not
+
+Scoped: the client roster (`GET /admin/tenants`), module adoption (`GET /admin/module-adoption`),
+the fleet rollup (`GET /analytics/fleet`) and the escalation queue with its stats
+(`GET /admin/call-issues`, `.../stats`). Each renders the caption, so a filtered screen says it is
+filtered and an *empty* filtered screen says why rather than claiming the platform is empty.
+
+Not scoped, and listed rather than silently passing:
+
+| Read | Why |
+|---|---|
+| `platform-billing-admin.controller.ts` | the revenue surface P13c builds on. Until then a superadmin sees the platform's billing. |
+| the ten per-tenant screens under `/instances/[id]` | reached only from the scoped roster, and each takes an explicit `orgId` that `TenantGuard` checks. A superadmin who guesses a UUID can still open one — which is 13.1 restated, not a separate hole. |
+| the operator roster, operator invites, the marketing funnel, the plan catalogue, partner portal routes | not client reads at all. Each is named in `operator-scope.spec.ts`'s `NOT_CLIENT_SCOPED` with its reason. |
+
+That spec is the inventory, run on every push: a cross-tenant client read added next month either
+carries the scope or names itself there with a reason. Doc 49 predicted the failure mode exactly —
+*"the sites you remember are fine and the twenty-first is the problem"* — and a grep done once is
+a grep that was right once.
+
+### 13.5 What 0206's first execution found
+
+The consistency CHECK was first written as the obvious disjunction, and executing it **accepted**
+`onboarded_by_operator = 'ops@example.com', onboarded_by_role = NULL` — the exact half-written
+record it existed to refuse. `role IN ('root','superadmin')` with a NULL role is NULL, so the
+whole expression was NULL, and **a CHECK constraint accepts a row whose expression is NULL.** Only
+an explicit FALSE rejects.
+
+It is now a `CASE` whose every branch is an `IS NULL` / `IS NOT NULL` test, so no shape can return
+NULL. All nine shapes were executed against Postgres; the matrix is in 0206's VERIFY block. Worth
+remembering the general form: *a constraint written as a disjunction of branches, any one of which
+can go NULL on the very column combination being guarded, is a constraint that silently passes the
+case it was written for.*

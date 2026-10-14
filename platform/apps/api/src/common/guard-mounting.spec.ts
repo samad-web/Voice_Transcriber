@@ -903,6 +903,13 @@ const CROSS_TENANT = [
   "GET /auth/me",
   "POST /admin/tenants",
   "GET /admin/tenants",
+  // The fleet-wide module adoption rollup (doc 49 P11). Cross-tenant because
+  // counting how many tenants have a module switched on and how many of those
+  // ever used it is a question about the fleet, not about one org - there is no
+  // org for TenantGuard to scope to. It is one of the four reads doc 49 P13b
+  // puts behind operatorScopeSql, so a superadmin sees adoption across THEIR
+  // clients rather than across the platform.
+  "GET /admin/module-adoption",
   "PATCH /admin/tenants/:orgId/modules",
   // Doc 27 §6.4: the operator's storage quota. Separate from the modules PATCH
   // so it cannot interfere with feature reconciliation. Display and warn only.
@@ -2633,7 +2640,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   // below were kept current - which made the one line a reader checks first the
   // one line that was wrong. Restated from the assertions as of Build docs/40
   // §B1; if you change a count below, change it here too.
-  it("has 833 routes, partitioned 715 tenant / 57 cross-tenant / 18 device / 26 unguarded / 1 internal / 7 portal", () => {
+  it("has 834 routes, partitioned 715 tenant / 58 cross-tenant / 18 device / 26 unguarded / 1 internal / 7 portal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -2876,8 +2883,14 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // row, and the status the return page polls. They are the only unguarded
     // routes in the tree that can lead to a row in `organizations`, and they
     // get there only via a signature the platform verified.
-    expect(ROUTES).toHaveLength(833);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(833);
+    // 834: plus GET /admin/module-adoption (doc 49 P11) - the operator console
+    // asking which modules the fleet has switched on and which of those are
+    // actually being used. Cross-tenant, on the same admin key as the other
+    // /admin reads. Worth recording that this count caught it: the route shipped
+    // in the adoption commit without being entered here, which is exactly the
+    // omission the number exists to refuse.
+    expect(ROUTES).toHaveLength(834);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(834);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2980,10 +2993,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         tenantScoped.length +
         internal.length +
         partner.length,
-    ).toBe(833); // = ROUTES.length: every route in exactly one class
+    ).toBe(834); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 757 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 758 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -3055,7 +3068,9 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // ours, and the signature over the raw bytes is what stands in for one.
     // 756: plus offboarding's two (0198). Both arrive on the console's admin
     // key with a user header, like every other route on this controller.
-    expect(principalRoutes).toHaveLength(757);
+    // 758: plus GET /admin/module-adoption (doc 49 P11), AdminKeyGuard then
+    // TenantGuard like every other read on AdminController.
+    expect(principalRoutes).toHaveLength(758);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);

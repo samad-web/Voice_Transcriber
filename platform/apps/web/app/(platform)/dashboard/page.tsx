@@ -12,6 +12,7 @@ import {
 import { Card, MonoLabel, Sparkline, STATE_TONE, StatCard, StatusChip } from "@aura/ui";
 import { JoinedNotice } from "@/components/joined-notice";
 import { LocalTime } from "@/components/local-time";
+import { OperatorScopeNote } from "@/components/operator-scope-note";
 import { PageHeader } from "@/components/page-header";
 import { TenantSwitcher } from "@/components/tenant-switcher";
 import { deltaText, percentDelta, pointsDelta, rateText, share } from "@/lib/dashboard-charts";
@@ -25,6 +26,13 @@ interface Overview {
   devices: { total: number; active: number };
   usage: Record<string, number>;
   byDay: Array<{ day: string; volume: number; complete: number }>;
+  /**
+   * Doc 49 P13b. Every tile below is an aggregate over the tenants this
+   * operator may see, so a scoped hub must say so - otherwise one operator's
+   * book of business is rendered in the typography of a platform total.
+   */
+  scope?: string | null;
+  scopeNote?: string | null;
 }
 
 interface Fleet {
@@ -47,6 +55,13 @@ interface Fleet {
     last_call_at: string | null;
   }>;
   byDay: Array<{ day: string; volume: number; complete: number }>;
+  /**
+   * Doc 49 P13b. Every tile below is an aggregate over the tenants this
+   * operator may see, so a scoped hub must say so - otherwise one operator's
+   * book of business is rendered in the typography of a platform total.
+   */
+  scope?: string | null;
+  scopeNote?: string | null;
 }
 
 /** GET /v1/analytics/active-users. */
@@ -162,6 +177,13 @@ export default async function DashboardPage({
         // superadmin invite rings nobody, because operators have no `users` row
         // and therefore no bell. Claiming otherwise would be a lie in a panel.
         <JoinedNotice email={session?.email || null} activityHref="/account/login-activity" />
+      ) : null}
+
+      {/* Doc 49 P13b: ahead of the tiles, because every tile is computed over
+          the scoped rows. A caption that arrives after the numbers is a
+          correction. */}
+      {fleet ? (
+        <OperatorScopeNote scope={fleet.scope} note={fleet.scopeNote} subject="clients" />
       ) : null}
 
       {fleet ? (

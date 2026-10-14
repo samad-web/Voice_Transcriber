@@ -1,6 +1,7 @@
 import { ORG_MODULES, type AdoptionState, type OrgModule } from "@aura/shared";
 import { Card, MonoLabel, StatCard, StatusChip } from "@aura/ui";
 import { LocalTime } from "@/components/local-time";
+import { OperatorScopeNote } from "@/components/operator-scope-note";
 import { PageHeader } from "@/components/page-header";
 import { operatorGate } from "@/lib/operator-gate";
 import { apiGetAdmin } from "@/lib/server-api";
@@ -52,6 +53,14 @@ interface AdoptionRow {
 
 interface AdoptionResponse {
   windowDays: number;
+  /**
+   * Doc 49 P13b. An adoption table is a book of business read sideways, so it
+   * is exactly as scoped as the client roster - and a scoped one has to say so,
+   * or "Modules sold: 5 across 4 tenants" reads as a statement about the
+   * platform when it is a statement about one operator's clients.
+   */
+  scope?: string | null;
+  scopeNote?: string | null;
   probes: Array<{ module: OrgModule; evidence: string; caveat: string | null }>;
   tenants: Array<{
     orgId: string;
@@ -126,6 +135,11 @@ export default async function AdoptionPage() {
         // `module-adoption.test.ts`, so the two cannot drift silently.
         description="What was switched on, against what has been used in the last 30 days."
       />
+
+      {/* Before the totals, not after: every number below is computed over the
+          rows this operator can see, so the qualification has to arrive first
+          or it is a correction rather than a caption. */}
+      <OperatorScopeNote scope={data.scope} note={data.scopeNote} subject="clients" />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard

@@ -1,6 +1,8 @@
-import { BadRequestException, Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Query, Req, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import type { PrincipalRequest } from "../../common/auth-principal";
+import { describeScope, operatorScopeSql, scopeForRequest } from "../../common/operator-scope";
 import { OperatorMayCall, OwnerRoleGuard, RequireOwnerRole } from "../../common/owner-role.guard";
 import { CrossTenant, OrgId, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -94,8 +96,23 @@ export class AnalyticsController {
    */
   @Get("fleet")
   @CrossTenant()
-  async fleet() {
+  async fleet(@Req() req: PrincipalRequest) {
     const admin = this.db.adminPool();
+    // ── SCOPED (doc 49 P13b) ───────────────────────────────────────────────
+    //
+    // Every number on this route is an aggregate ACROSS tenants, which makes
+    // it the least obvious place a scope is needed and the worst place to
+    // forget one: a superadmin reading the fleet's total call count is reading
+    // the size of somebody else's business, even though no tenant is named.
+    //
+    // The gate is woven into each query rather than applied once, because
+    // these are five independent aggregates and "apply it once" is how four of
+    // them end up unfiltered.
+    const scope = scopeForRequest(req);
+    const callGate = operatorScopeSql(scope, "calls.org_id", 1);
+    const orgGate = operatorScopeSql(scope, "organizations.id", 1);
+    const deviceGate = operatorScopeSql(scope, "devices.org_id", 1);
+    const byTenantGate = operatorScopeSql(scope, "o.id", 1);
 
     const {
       rows: [totals],
@@ -106,14 +123,18 @@ export class AnalyticsController {
               count(*) FILTER (WHERE status NOT IN ('COMPLETE', 'NO_AUDIO')
                                  AND status NOT LIKE 'FAILED%')::int   AS in_pipeline,
               COALESCE(sum(duration_s), 0)::int                        AS total_seconds
-         FROM calls`,
+         FROM calls
+        WHERE ${callGate.sql}`,
+      callGate.params,
     );
     const {
       rows: [tenants],
     } = await admin.query(
       `SELECT count(*)::int AS total,
               count(*) FILTER (WHERE status = 'active')::int AS active
-         FROM organizations`,
+         FROM organizations
+        WHERE ${orgGate.sql}`,
+      orgGate.params,
     );
     const {
       rows: [devices],
@@ -122,7 +143,8 @@ export class AnalyticsController {
       // this platform-wide count is describing.
       `SELECT count(*)::int AS total,
               count(*) FILTER (WHERE status = 'active')::int AS active
-         FROM devices WHERE removed_at IS NULL`,
+         FROM devices WHERE removed_at IS NULL AND ${deviceGate.sql}`,
+      deviceGate.params,
     );
     const { rows: byTenant } = await admin.query(
       `SELECT o.id, o.name, o.status,
@@ -132,8 +154,10 @@ export class AnalyticsController {
               max(c.started_at)                                     AS last_call_at
          FROM organizations o
          LEFT JOIN calls c ON c.org_id = o.id
+        WHERE ${byTenantGate.sql}
         GROUP BY o.id, o.name, o.status
         ORDER BY calls DESC, o.name ASC`,
+      byTenantGate.params,
     );
     const { rows: byDay } = await admin.query(
       `SELECT date_trunc('day', started_at)::date AS day,
@@ -141,10 +165,24 @@ export class AnalyticsController {
               count(*) FILTER (WHERE status = 'COMPLETE')::int AS complete
          FROM calls
         WHERE started_at > now() - interval '30 days'
+          AND ${callGate.sql}
         GROUP BY 1 ORDER BY 1`,
+      callGate.params,
     );
 
-    return { calls: totals, tenants, devices, byTenant, byDay };
+    return {
+      calls: totals,
+      tenants,
+      devices,
+      byTenant,
+      byDay,
+      scope: scope.kind,
+      // The caption, not just the kind. Every tile on the platform hub is an
+      // aggregate over these rows, so a scoped hub reporting "4 tenants, 812
+      // calls" is stating the size of one operator's book in the typography of
+      // a platform total.
+      scopeNote: describeScope(scope),
+    };
   }
 
   /**

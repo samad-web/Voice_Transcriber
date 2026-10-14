@@ -22,12 +22,18 @@ import {
   WhatsAppProvider,
 } from "@aura/shared";
 import {
+  onboardingFromActor,
   provisionTenant,
   seedBoardDefaults,
   seedCrmDefaults,
   seedRoleDefaults,
 } from "./provisioning";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import {
+  describeScope,
+  operatorScopeSql,
+  scopeForRequest,
+} from "../../common/operator-scope";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { CrossTenant, TenantGuard } from "../../common/tenant.guard";
 import { DbService } from "../../db/db.service";
@@ -146,6 +152,9 @@ export class AdminController {
       // The shared path, not a copy of it. Self-serve signup calls the same
       // function - see provisioning.ts for why a second caller is exactly the
       // condition under which an inline body becomes dangerous.
+      // Named ONCE: the same actor decides the audit row and the onboarding
+      // attribution, so the two can never disagree about who did this.
+      const actor = auditActor(req);
       const { org, workspace, instance, enrollment } = await provisionTenant(
         client,
         {
@@ -159,8 +168,14 @@ export class AdminController {
           whatsappProvider: p.whatsappProvider,
           tokenTtlMinutes: p.tokenTtlMinutes,
           tokenMaxUses: p.tokenMaxUses,
+          // Doc 49 P13b. 'root' or 'superadmin' is decided from the
+          // environment, not from the request - see onboardingFromActor. An
+          // operator console request with no `x-operator-email` lands on
+          // UNATTRIBUTED, which makes the new client ROOT-ONLY rather than
+          // everybody's.
+          onboarding: onboardingFromActor(actor),
         },
-        auditActor(req),
+        actor,
       );
 
       await client.query("COMMIT");
@@ -339,8 +354,11 @@ export class AdminController {
    * cross-tenant operator route.
    */
   @Get("module-adoption")
-  async moduleAdoption() {
+  async moduleAdoption(@Req() req: PrincipalRequest) {
     const admin = this.db.adminPool();
+    const adoptionScope = scopeForRequest(req);
+    // $1 is the window; the gate's parameter is $2.
+    const adoptionGate = operatorScopeSql(adoptionScope, "o.id", 2);
 
     const branches = MODULE_ADOPTION_PROBES.map(
       (probe) => `
@@ -371,8 +389,11 @@ export class AdminController {
          FROM evidence e
          JOIN organizations o ON o.id = e.org_id
         WHERE o.status <> 'deleted'
+          -- SCOPED (doc 49 P13b). An adoption table is a book of business
+          -- read sideways, so it is exactly as scoped as the client roster.
+          AND ${adoptionGate.sql}
         ORDER BY o.name, e.module`,
-      [ADOPTION_WINDOW_DAYS],
+      [ADOPTION_WINDOW_DAYS, ...adoptionGate.params],
     );
 
     // Folded per tenant here rather than in SQL: the shape the console wants is
@@ -422,12 +443,23 @@ export class AdminController {
         caveat: p.caveat ?? null,
       })),
       tenants,
+      scope: adoptionScope.kind,
+      scopeNote: describeScope(adoptionScope),
     };
   }
 
   @Get("tenants")
-  async tenants() {
+  async tenants(@Req() req: PrincipalRequest) {
     const admin = this.db.adminPool();
+    // ── SCOPED (doc 49 P13b) ───────────────────────────────────────────────
+    //
+    // The client roster is the most obviously scoped read in the console: a
+    // superadmin should see their own book. The predicate goes into the SQL
+    // rather than filtering the result, because a query that forgets it
+    // returns too many rows and is obvious, where a forgotten `.filter()`
+    // returns too many rows and looks like a working endpoint.
+    const scope = scopeForRequest(req);
+    const gate = operatorScopeSql(scope, "o.id", 1);
     const { rows } = await admin.query(
       `SELECT o.id, o.name, o.status, o.consent_policy, o.retention_days, o.region,
               o.enabled_modules, o.whatsapp_provider, o.created_at,
@@ -446,12 +478,27 @@ export class AdminController {
               s.recording_bytes::text AS storage_bytes,
               s.recording_count       AS storage_recordings,
               s.computed_at           AS storage_computed_at,
-              o.storage_quota_bytes::text AS storage_quota_bytes
+              o.storage_quota_bytes::text AS storage_quota_bytes,
+              -- 0206: who onboarded this client, and what they were at the
+              -- time. The column that makes the hierarchy legible rather than
+              -- merely enforced - a filtered list with no "onboarded by"
+              -- column leaves an operator unable to tell why a client is
+              -- missing from it.
+              o.onboarded_by_operator, o.onboarded_by_role, o.onboarded_at
          FROM organizations o
          LEFT JOIN org_storage_usage s ON s.org_id = o.id
+        WHERE ${gate.sql}
         ORDER BY o.created_at DESC`,
+      gate.params,
     );
-    return { tenants: rows };
+    return {
+      tenants: rows,
+      // The console renders this, so a filtered screen says it is filtered.
+      // "Showing your clients only" is an honest caption; silence on a short
+      // list reads as "this is everything".
+      scope: scope.kind,
+      scopeNote: describeScope(scope),
+    };
   }
 
   /**

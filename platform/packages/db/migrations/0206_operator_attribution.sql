@@ -90,15 +90,48 @@ ALTER TABLE organizations ADD CONSTRAINT organizations_onboarded_by_role_check
 -- An email with no role, or a role with no email, is a half-written record that
 -- the scope predicate would have to guess about. 'self_serve' is the one role
 -- that legitimately has no email.
+--
+-- ── WRITTEN AS A CASE, AND THAT IS NOT A STYLE CHOICE ──────────────────────
+--
+-- The first draft of this constraint was the obvious disjunction:
+--
+--   CHECK ( (operator IS NULL AND role IS NULL)
+--           OR (role = 'self_serve' AND operator IS NULL)
+--           OR (operator IS NOT NULL AND role IN ('root','superadmin') AND ...) )
+--
+-- and executing it accepted `operator = 'ops@example.com', role = NULL` - the
+-- exact half-written record it was written to refuse. The reason is SQL's
+-- three-valued logic, and it is worth spelling out because it is invisible on
+-- the page:
+--
+--   branch 1  FALSE  (operator is not null)
+--   branch 2  FALSE
+--   branch 3  `role IN ('root','superadmin')` with role NULL is NULL, so the
+--             whole conjunction is NULL
+--   result    FALSE OR FALSE OR NULL  =  NULL
+--
+-- **A CHECK constraint accepts the row when its expression is NULL.** Only an
+-- explicit FALSE rejects. So a disjunction of branches, any one of which can go
+-- NULL on the very column combination being guarded against, is a constraint
+-- that silently passes the case it was written for.
+--
+-- A CASE whose every branch is an `IS NULL` / `IS NOT NULL` test cannot return
+-- NULL, so every shape gets a definite verdict. The shapes are enumerated under
+-- VERIFY below and each one was executed.
 ALTER TABLE organizations DROP CONSTRAINT IF EXISTS organizations_onboarded_consistent;
 ALTER TABLE organizations ADD CONSTRAINT organizations_onboarded_consistent
   CHECK (
-    (onboarded_by_operator IS NULL AND onboarded_by_role IS NULL)
-    OR (onboarded_by_role = 'self_serve' AND onboarded_by_operator IS NULL)
-    OR (onboarded_by_operator IS NOT NULL
-        AND onboarded_by_role IN ('root', 'superadmin')
-        AND onboarded_by_operator = lower(btrim(onboarded_by_operator))
-        AND onboarded_by_operator <> '')
+    CASE
+      -- Nothing on the record. Then there must be nothing on the record.
+      WHEN onboarded_by_role IS NULL THEN onboarded_by_operator IS NULL
+      -- The one role that legitimately has no email.
+      WHEN onboarded_by_role = 'self_serve' THEN onboarded_by_operator IS NULL
+      -- 'root' or 'superadmin', the only values the role CHECK above still
+      -- permits: a normalised, non-empty address is required.
+      ELSE onboarded_by_operator IS NOT NULL
+           AND onboarded_by_operator = lower(btrim(onboarded_by_operator))
+           AND onboarded_by_operator <> ''
+    END
   );
 
 COMMENT ON COLUMN organizations.onboarded_by_operator IS
@@ -155,6 +188,21 @@ COMMIT;
 -- ── VERIFY ──────────────────────────────────────────────────────────────────
 --
 --   \d+ organizations
+--
+--   -- EVERY shape, executed - four accepted, five refused. The third column is
+--   -- onboarded_at, which only an attributed row carries.
+--   --
+--   --   operator            role          verdict
+--   --   ------------------  ------------  -----------------------------------
+--   --   max@example.com     root          OK, stamped
+--   --   asha@example.com    superadmin    OK, stamped
+--   --   NULL                self_serve    OK, stamped
+--   --   NULL                NULL          OK, not stamped (unattributed)
+--   --   ops@example.com     NULL          REFUSED  <- the NULL-logic hole
+--   --   NULL                superadmin    REFUSED
+--   --   Ops@Example.com     superadmin    REFUSED  (not normalised)
+--   --   ops@example.com     self_serve    REFUSED
+--   --   ops@example.com     admin         REFUSED  (role CHECK)
 --
 --   -- a half-written record is refused:
 --   UPDATE organizations SET onboarded_by_operator = 'ops@example.com' WHERE id = '...';

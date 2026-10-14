@@ -137,6 +137,20 @@ export class SignupService {
           modules: [...modules],
           tokenTtlMinutes: 60 * 24 * 14,
           tokenMaxUses: 5,
+          // Doc 49 P13b. Stated here rather than inferred from the actor,
+          // which is a `system` actor - and so is a script holding the admin
+          // key. Letting the actor type imply 'self_serve' would attribute a
+          // scripted tenant to a buyer who never existed.
+          //
+          // 'self_serve' carries NO operator, which is 0206's one legal
+          // email-less role. The consequence is deliberate and worth stating:
+          // a client who bought themselves is attributed to nobody, so under
+          // OPERATOR_SCOPE_ENABLED they are visible to the ROOT only until an
+          // operator takes them on. That is doc 49's own recommended default -
+          // a self-serve signup has no account manager yet, and inventing one
+          // would hand a stranger's workspace to whichever superadmin the code
+          // happened to name.
+          onboarding: { role: "self_serve", operator: null },
         },
         { id: `signup:${signup.id}`, type: "system" },
       );

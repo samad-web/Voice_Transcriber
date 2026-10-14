@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LoadFailure } from "@/components/load-failure";
+import { OperatorScopeNote } from "@/components/operator-scope-note";
 import { PageHeader } from "@/components/page-header";
 import { operatorGate } from "@/lib/operator-gate";
 import { apiTryAdmin } from "@/lib/server-api";
@@ -45,7 +46,9 @@ export default async function SupportPage() {
   if (blocked) return blocked;
 
   const [queue, stats] = await Promise.all([
-    apiTryAdmin<{ reports: Escalation[] }>("/v1/admin/call-issues?state=unacknowledged"),
+    apiTryAdmin<{ reports: Escalation[]; scope?: string | null; scopeNote?: string | null }>(
+      "/v1/admin/call-issues?state=unacknowledged",
+    ),
     apiTryAdmin<EscalationStats>("/v1/admin/call-issues/stats"),
   ]);
 
@@ -56,6 +59,16 @@ export default async function SupportPage() {
         context="Support"
         description="Problems clients have reported with their processed calls. Re-running a call is ours to do, and it spends - so read the snapshot before you press it."
       />
+
+      {/* Doc 49 P13b. Above the board, because the board's own stats row is
+          computed over the scoped queue too. */}
+      {queue.ok ? (
+        <OperatorScopeNote
+          scope={queue.data.scope}
+          note={queue.data.scopeNote}
+          subject="clients"
+        />
+      ) : null}
 
       {queue.ok ? (
         <EscalationBoard

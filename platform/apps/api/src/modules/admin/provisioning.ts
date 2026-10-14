@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { PoolClient } from "pg";
+import { isRootOperator } from "../../common/operator-scope";
 import {
   DEFAULT_PIPELINE_STAGES,
   type OrgModule,
@@ -167,6 +168,51 @@ export async function seedBoardDefaults(client: PoolClient, orgId: string): Prom
   await client.query(`SELECT seed_default_board($1)`, [orgId]);
 }
 
+/**
+ * WHO ONBOARDED THIS CLIENT (doc 49 P13b, migration 0206).
+ *
+ * The shape mirrors 0206's consistency CHECK exactly, so a value that type-checks
+ * is a value the database will accept. The three legal states, and nothing else:
+ *
+ *   - an operator did it, and is named;
+ *   - nobody did it - the buyer provisioned themselves;
+ *   - it is not on the record, which is every tenant predating 0206 and any
+ *     tenant a script creates with the bare admin key.
+ *
+ * The third state is NOT a failure. `operatorOrgScope` treats an unattributed
+ * client as root-only, so the absence of a record is conservative rather than
+ * permissive - which is the whole reason it is allowed to exist instead of being
+ * guessed at.
+ */
+export type OnboardingAttribution =
+  | { role: "root" | "superadmin"; operator: string }
+  | { role: "self_serve"; operator: null }
+  | { role: null; operator: null };
+
+/** Nothing on the record. See OnboardingAttribution's third state. */
+export const UNATTRIBUTED: OnboardingAttribution = { role: null, operator: null };
+
+/**
+ * The attribution implied by an audit actor.
+ *
+ * Only an `operator` actor can be attributed, and whether that operator is the
+ * ROOT is decided here against the environment - never taken from a caller and
+ * never read from `platform_operators`, for 0089's reason, which 0206's header
+ * restates.
+ *
+ * Every other actor shape resolves to UNATTRIBUTED rather than to a guess. In
+ * particular a `system` actor does NOT become 'self_serve': the signup path says
+ * so explicitly, and a script holding the admin key is a different thing wearing
+ * the same actor type. Inferring one from the other would write a false
+ * provenance record, which is worse than an honest blank.
+ */
+export function onboardingFromActor(actor: ProvisionActor): OnboardingAttribution {
+  if (actor.type !== "operator") return UNATTRIBUTED;
+  const email = actor.id.trim().toLowerCase();
+  if (!email) return UNATTRIBUTED;
+  return { role: isRootOperator(email) ? "root" : "superadmin", operator: email };
+}
+
 /** What a caller must decide before an org can exist. */
 export interface ProvisionTenantInput {
   name: string;
@@ -181,6 +227,13 @@ export interface ProvisionTenantInput {
   whatsappProvider?: WhatsAppProvider;
   tokenTtlMinutes: number;
   tokenMaxUses: number;
+  /**
+   * Who onboarded this client. REQUIRED, and deliberately not defaulted: a
+   * default would mean the third caller of this function silently creates an
+   * unattributed tenant, and an unattributed tenant is invisible to every
+   * superadmin. Pass UNATTRIBUTED to say so on purpose.
+   */
+  onboarding: OnboardingAttribution;
 }
 
 /** Who to name in the audit row. */
@@ -233,15 +286,27 @@ export async function provisionTenant(
   const {
     rows: [org],
   } = await client.query(
+    // Both attribution parameters are cast. They are the only two nullable
+    // text parameters here, and an uncast NULL text leaves Postgres unable to
+    // determine the parameter's type at PREPARE - a 42P08 that names the
+    // parameter number and nothing else. This codebase has lost a day to that
+    // exact error four times; see `audit_log`'s own note.
     `INSERT INTO organizations (name, consent_policy, retention_days, region,
-                                enabled_modules, whatsapp_provider)
+                                enabled_modules, whatsapp_provider,
+                                onboarded_by_operator, onboarded_by_role, onboarded_at)
      VALUES ($1,
              COALESCE($2, 'tone'),
              COALESCE($3, 90),
              COALESCE($4, 'ap-south-1'),
-             $5, $6)
+             $5, $6,
+             $7::text, $8::text,
+             -- Only a client that IS attributed gets a time of attribution. An
+             -- unattributed row carrying a timestamp would read as "onboarded
+             -- by somebody at 14:03", which is the opposite of what it means.
+             CASE WHEN $8::text IS NULL THEN NULL ELSE now() END)
      RETURNING id, name, status, consent_policy, retention_days, region,
-               enabled_modules, whatsapp_provider, created_at`,
+               enabled_modules, whatsapp_provider, created_at,
+               onboarded_by_operator, onboarded_by_role, onboarded_at`,
     [
       input.name,
       input.consentPolicy ?? null,
@@ -249,6 +314,8 @@ export async function provisionTenant(
       input.region ?? null,
       modules,
       whatsappProvider,
+      input.onboarding.operator,
+      input.onboarding.role,
     ],
   );
 

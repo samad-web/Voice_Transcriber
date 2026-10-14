@@ -25,6 +25,7 @@ import {
   isCallAccessLive,
 } from "@aura/shared";
 import { AdminKeyGuard } from "../../common/admin-key.guard";
+import { describeScope, operatorScopeSql, scopeForRequest } from "../../common/operator-scope";
 import { auditActor } from "../../common/audit-actor";
 import type { PrincipalRequest } from "../../common/auth-principal";
 import { OperatorOnlyGuard } from "../../common/operator-only.guard";
@@ -159,11 +160,22 @@ export class AdminCallIssuesController {
     const { state, category, severity, orgId, q, limit, offset } = parsed.data;
     const me = req.principal?.operatorEmail ?? null;
 
+    // ── SCOPED (doc 49 P13b) ───────────────────────────────────────────────
+    //
+    // The escalation queue spans every tenant, which is its whole purpose, and
+    // every row names a client and describes something wrong with their calls.
+    // A superadmin reading another superadmin's incidents is exactly the
+    // mixing of books this filter exists to stop. $10 - after the nine the
+    // query already takes.
+    const queueScope = scopeForRequest(req);
+    const queueGate = operatorScopeSql(queueScope, "r.org_id", 10);
+
     const { rows } = await this.db.adminPool().query(
       `SELECT ${QUEUE_COLUMNS}
          FROM call_issue_reports r
          JOIN organizations o ON o.id = r.org_id
-        WHERE ($1::text = 'all'
+        WHERE ${queueGate.sql}
+          AND ($1::text = 'all'
                OR ($1 = 'live' AND r.status = ANY($2::text[]))
                OR ($1 = 'unacknowledged' AND r.status = 'open')
                OR ($1 = 'mine' AND r.status = ANY($2::text[])
@@ -190,9 +202,18 @@ export class AdminCallIssuesController {
         q ?? null,
         limit,
         offset,
+        ...queueGate.params,
       ],
     );
-    return { reports: rows };
+    return {
+      reports: rows,
+      // The console renders this. A queue that is empty because it is filtered
+      // and a queue that is empty because nobody has reported anything are the
+      // same screen otherwise, and the second is the one an operator is hoping
+      // for - so the first must not be allowed to impersonate it.
+      scope: queueScope.kind,
+      scopeNote: describeScope(queueScope),
+    };
   }
 
   /**
@@ -203,7 +224,9 @@ export class AdminCallIssuesController {
    * second of waiting for numbers that must agree with each other anyway.
    */
   @Get("stats")
-  async stats() {
+  async stats(@Req() req: PrincipalRequest) {
+    // $1 is the live-status array; the gate's parameter is $2.
+    const statsGate = operatorScopeSql(scopeForRequest(req), "call_issue_reports.org_id", 2);
     const {
       rows: [row],
     } = await this.db.adminPool().query(
@@ -227,8 +250,9 @@ export class AdminCallIssuesController {
               -- feeds is the one that should make somebody open the queue.
               round(EXTRACT(EPOCH FROM (now() - min(reported_at) FILTER (WHERE status = 'open'))) / 3600)::int
                 AS oldest_unacknowledged_hours
-         FROM call_issue_reports`,
-      [[...CALL_ISSUE_LIVE_STATUSES]],
+         FROM call_issue_reports
+        WHERE ${statsGate.sql}`,
+      [[...CALL_ISSUE_LIVE_STATUSES], ...statsGate.params],
     );
     return row;
   }
