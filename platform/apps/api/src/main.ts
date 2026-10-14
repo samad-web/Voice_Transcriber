@@ -3,9 +3,12 @@ import { NestFactory } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import helmet from "helmet";
 import { warnIfSecretsUnencrypted } from "@aura/db";
+import { initErrorReporting } from "@aura/shared";
+import { HttpAdapterHost } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { assertRequiredEnv } from "./config/assert-env";
 import { corsDelegate } from "./config/cors";
+import { ErrorReportingFilter } from "./common/error-reporting.filter";
 import { mountImportBodyParser } from "./modules/import/import-body-limit";
 
 async function bootstrap() {
@@ -14,6 +17,17 @@ async function bootstrap() {
   // default, so the container dies in its restart loop rather than serving
   // customer data behind a key anyone can read out of this repository.
   assertRequiredEnv();
+
+  /**
+   * Error reporting, second - after the env assertions and before anything can
+   * throw (doc 49 P2-A).
+   *
+   * Before this the entire observability stack was `GET /health`, which stayed
+   * green through 62 days of the product's core function failing. A DSN that is
+   * unset is a warning line and a no-op, never a boot failure: observability
+   * that can take the product down is worse than none.
+   */
+  initErrorReporting({ service: "api" });
 
   // rawBody: true keeps the original request bytes on req.rawBody alongside
   // the normal parsed body. Needed by the Razorpay webhook, whose HMAC
@@ -41,6 +55,11 @@ async function bootstrap() {
   // modules/import/import-body-limit.ts. Every other route keeps 1mb.
   mountImportBodyParser(app);
   app.useBodyParser("json", { limit: "1mb" });
+
+  // Reports 5xx and delegates to Nest's own filter unchanged, so no status
+  // code or body moves. The adapter host is passed because BaseExceptionFilter
+  // needs it to render the response it is still responsible for.
+  app.useGlobalFilters(new ErrorReportingFilter(app.get(HttpAdapterHost).httpAdapter));
 
   app.setGlobalPrefix("v1");
   app.enableCors(corsDelegate());

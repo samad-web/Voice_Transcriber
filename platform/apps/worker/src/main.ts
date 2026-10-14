@@ -2,9 +2,11 @@ import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { consumeAnalyze, consumeEnrich, consumeExport, consumePipeline } from "@aura/queue";
 import { warnIfSecretsUnencrypted } from "@aura/db";
+import { captureError, initErrorReporting } from "@aura/shared";
 import { WorkerModule } from "./worker.module";
 import { analyzeCall, processCall } from "./pipeline/pipeline";
 import { startAsrPoller } from "./pipeline/asr-poll";
+import { startHeartbeat } from "./pipeline/heartbeat";
 import { enrichCall, startEnrichmentSweep } from "./pipeline/enrich";
 import { asrBannerLine, preflightAsrProviders, startAsrPreflight } from "./pipeline/asr-preflight";
 import { startReaper } from "./pipeline/reaper";
@@ -70,6 +72,22 @@ import {
 import { startAgentAccuracySweep } from "./pipeline/agent/eval";
 
 async function bootstrap() {
+  /**
+   * Error reporting first (doc 49 P2-A).
+   *
+   * The worker is the process where the 62-day outage actually happened, and
+   * for all 62 days its only output was console.error into `docker compose
+   * logs` - no retention, no aggregation, nobody reading it. A DSN that is
+   * unset is one warning line and a no-op.
+   *
+   * It installs an `uncaughtExceptionMonitor`, deliberately not an
+   * `uncaughtException` handler: the monitor observes and lets Node's default
+   * crash proceed. A handler would SUPPRESS the crash, leaving a container that
+   * looks up while consuming nothing - which is the exact failure shape this is
+   * a response to.
+   */
+  initErrorReporting({ service: "worker" });
+
   const app = await NestFactory.createApplicationContext(WorkerModule);
   app.enableShutdownHooks();
   warnIfSecretsUnencrypted("worker");
@@ -454,6 +472,16 @@ async function bootstrap() {
     }
   }
   const asr = await asrBannerLine();
+  /**
+   * The heartbeat starts LAST, after every consumer and sweep is up (0203).
+   *
+   * Order is the whole point. A beat written at the top of bootstrap would say
+   * "the worker is running" about a process that has not connected to the
+   * broker yet, so a worker crash-looping on a bad queue config would beat
+   * happily forever while consuming nothing. Beating only once everything is
+   * actually consuming makes the signal mean what the alert assumes it means.
+   */
+  startHeartbeat(asr);
   console.log(
     `Aura worker consuming aura.pipeline x${process.env.PIPELINE_PREFETCH ?? 8} ` +
       `(transcode → ${asr}) + aura.analyze x${process.env.ANALYZE_PREFETCH ?? 8} ` +
@@ -472,4 +500,20 @@ async function bootstrap() {
   );
 }
 
-void bootstrap();
+/**
+ * A boot that throws must be REPORTED, not merely crash.
+ *
+ * `void bootstrap()` on its own means a failure to connect to RabbitMQ, or a
+ * migration the worker's queries do not match, surfaces as an unhandled
+ * rejection in a log nobody reads - and then the container restarts and does it
+ * again. The monitor installed inside `initErrorReporting` covers everything
+ * after it; this covers the window before and the boot itself.
+ *
+ * It rethrows, so the process still dies. A worker that cannot boot must not
+ * stay up pretending to consume.
+ */
+void bootstrap().catch((err) => {
+  captureError(err, { where: "worker.bootstrap", fingerprint: "worker:bootstrap" });
+  console.error("Aura worker failed to start:", err);
+  process.exit(1);
+});

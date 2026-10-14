@@ -1,0 +1,129 @@
+# Uptime, checked from somewhere that is not the VPS (doc 49 P2-C).
+#
+# ── WHY THIS CANNOT BE A CRON ON THE BOX ────────────────────────────────────
+#
+# `platform/scripts/alerts.js` runs from cron on the VPS and covers twelve
+# conditions, but it cannot cover the thirteenth: if the VPS is down, the cron
+# is down with it and nothing is sent. Silence from a monitor is ambiguous, and
+# the one case where it is ambiguous in the worst direction is the case where
+# the whole box is gone.
+#
+# So the check has to run from outside. A paid uptime service is the usual
+# answer and still worth buying; this is the version that costs nothing, lives
+# in the repo where it can be reviewed, and exists TODAY rather than after a
+# procurement conversation. GitHub's scheduled runners are not on this VPS, in
+# this datacentre, or with this provider, which is the entire requirement.
+#
+# ── WHAT IT DELIBERATELY DOES NOT DO ────────────────────────────────────────
+#
+# Authenticate. It hits only unauthenticated health paths, so no credential has
+# to live in a public repository's CI. It therefore proves "the process is
+# answering", not "the product is working" - the second question is the alert
+# script's job and the two are complementary rather than redundant. That
+# distinction is exactly P1's lesson: `GET /health` was green for 62 days.
+#
+# ── THE HONEST LIMITS ───────────────────────────────────────────────────────
+#
+#   * GitHub's scheduled triggers are best-effort and are routinely delayed by
+#     several minutes under load, and are disabled entirely on a repository with
+#     no activity for 60 days. Treat this as "we will know within the hour",
+#     never as an SLA instrument.
+#   * It opens no issue and pages nobody unless UPTIME_WEBHOOK is set. A red run
+#     in a tab nobody has open is the same as no check.
+name: Uptime
+
+on:
+  schedule:
+    # Every 15 minutes is the shortest interval GitHub will honour in practice.
+    - cron: "*/15 * * * *"
+  # So the delivery path can be proved by hand. An alert nobody has ever seen
+  # fire has not been tested.
+  workflow_dispatch:
+    inputs:
+      force_failure:
+        description: "Report a failure even if everything is up, to test delivery"
+        type: boolean
+        default: false
+
+# One run at a time: a 15-minute schedule and a slow timeout could otherwise
+# stack up runs that all report the same outage.
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe the public endpoints
+        id: probe
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Configured as repository VARIABLES, not secrets: both are public
+          # hostnames. A secret here would only make a red run harder to read.
+          CONSOLE="${{ vars.UPTIME_CONSOLE_URL || 'https://aura.sirahagents.com' }}"
+          API_HEALTH="${{ vars.UPTIME_API_HEALTH_URL || 'https://aura.sirahagents.com/api/health' }}"
+
+          failures=()
+
+          probe() {
+            local label="$1" url="$2"
+            # --max-time bounds a hung TLS handshake, which is how a dying box
+            # usually presents - not as a refused connection.
+            local code
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 \
+                     --retry-delay 5 --retry-connrefused "$url" || echo "000")
+            if [ "$code" != "200" ]; then
+              failures+=("$label returned HTTP $code")
+              echo "FAIL  $label  $url  -> $code"
+            else
+              echo "ok    $label  $url"
+            fi
+          }
+
+          probe "console" "$CONSOLE"
+          probe "api health" "$API_HEALTH"
+
+          if [ "${{ inputs.force_failure }}" = "true" ]; then
+            failures+=("forced failure from workflow_dispatch - this is a delivery test, ignore")
+          fi
+
+          if [ ${#failures[@]} -gt 0 ]; then
+            {
+              echo "detail<<EOF"
+              printf '%s\n' "${failures[@]}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Say so, out loud, somewhere a human looks
+        # `always()` plus the explicit failure test, because a step that only
+        # runs on success cannot report a failure - and this is the only step
+        # that reaches a person.
+        if: ${{ failure() && steps.probe.outputs.detail != '' }}
+        shell: bash
+        env:
+          WEBHOOK: ${{ secrets.UPTIME_WEBHOOK }}
+          DETAIL: ${{ steps.probe.outputs.detail }}
+        run: |
+          set -uo pipefail
+          TEXT="CRITICAL uptime (from outside the VPS)
+          $DETAIL
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "$TEXT"
+          if [ -z "${WEBHOOK:-}" ]; then
+            echo "::warning::UPTIME_WEBHOOK is not set - this failure reached nobody."
+            exit 0
+          fi
+          # Same body shape scripts/alerts.js posts, so one webhook URL serves
+          # both and the two monitors read alike in the channel.
+          curl -sS --max-time 20 -X POST "$WEBHOOK" \
+            -H 'content-type: application/json' \
+            --data "$(jq -cn --arg t "$TEXT" '{text:$t, content:$t}')" \
+            || echo "::warning::could not reach UPTIME_WEBHOOK"

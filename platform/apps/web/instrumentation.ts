@@ -15,6 +15,7 @@
  * container is a far better outcome than an open one (road map §0.2).
  */
 
+import { captureError, initErrorReporting } from "@aura/shared";
 import { AUTH_ENABLED } from "@/lib/supabase/config";
 
 /** Dev defaults that must never be the live value. Mirrors the API's own list. */
@@ -24,6 +25,18 @@ export async function register() {
   // Also loaded in the edge runtime (middleware); the env checks below are
   // about the Node server that actually holds the admin key.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
+  /**
+   * Error reporting (doc 49 P2-A), before the assertions below - so a boot
+   * that ends in the `throw` at the bottom of this file is REPORTED rather than
+   * only crash-looping a container.
+   *
+   * Process handlers are off here. Next owns this process and installs its own
+   * handlers; adding a monitor would double-report every error that already
+   * comes through `onRequestError` below, and the one job this file must not do
+   * is make a startup path noisier than it is informative.
+   */
+  initErrorReporting({ service: "web", installProcessHandlers: false });
 
   const production = process.env.NODE_ENV === "production";
   const adminKey = process.env.ADMIN_API_KEY;
@@ -73,4 +86,26 @@ export async function register() {
     );
   }
   console.warn(`[startup] ${detail}. Fine for local dev; fatal in production.`);
+}
+
+/**
+ * Next's own hook for an error thrown while rendering or in a route handler.
+ *
+ * Called by the framework for every uncaught server-side error, which is the
+ * web tier's equivalent of the API's exception filter. It attaches the route
+ * TEMPLATE and nothing else: a resolved path on this console carries lead ids,
+ * call ids and - on the search routes - a query string that can hold a phone
+ * number.
+ *
+ * `captureError` builds its event from an allowlist, so even a careless
+ * addition here cannot put a request body or a header on the wire.
+ */
+export async function onRequestError(
+  err: unknown,
+  request: { path?: string; method?: string },
+  context: { routePath?: string; routerKind?: string },
+): Promise<void> {
+  const route = context?.routePath ?? "unrouted";
+  const where = `${request?.method ?? "?"} ${route}`;
+  captureError(err, { where, fingerprint: `web:${where}` });
 }

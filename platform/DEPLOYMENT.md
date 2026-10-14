@@ -688,3 +688,123 @@ go-ahead:
    out when "Sign out of my other devices" was ticked.
 3. **Login activity**: a sign-in appears with *your* public IP, not the proxy's. The web tier takes
    the right-most `X-Forwarded-For` hop, which host nginx appends (`$proxy_add_x_forwarded_for`).
+
+---
+
+## 10. Observability and alerting (Build docs/49 P2)
+
+**Read this first: for 62 days the entire observability stack was `GET /health`, and it was green
+the whole time while 96% of the product's core function failed.** A health check that cannot see
+the business failing is not monitoring; it is reassurance. Everything in this section exists
+because of that, and the ordering below is "what would have caught it", not "what is easiest".
+
+### 10.1 Error tracking
+
+`SENTRY_DSN` (or `GLITCHTIP_DSN`) in `.env.production` turns it on for all four apps. Unset is a
+warning line at boot and a no-op — observability that can take the product down is worse than none.
+
+```bash
+# any Sentry-compatible ingest, incl. a self-hosted GlitchTip on the box
+SENTRY_DSN=https://<public-key>@errors.example.com/<project-id>
+SENTRY_ENVIRONMENT=production
+BUILD_SHA=$(git rev-parse HEAD)      # so an event names the commit it came from
+```
+
+`packages/shared/src/observability.ts` does **not** use the Sentry SDK, and the reason is the one
+non-negotiable constraint on this product. The SDK's model is capture-then-redact: it instruments
+HTTP and attaches request bodies, headers, cookies and breadcrumbs, leaving you to strip what you
+do not want. That is a denylist, and a denylist over a payload of customer call content is wrong
+the first time somebody adds a field. Here an event is **constructed** from four things — an error
+type, a scrubbed message, stack frames, and five allowlisted tags — so there is no field a
+transcript, a phone number or a presigned recording URL can travel in. `observability.test.ts`
+asserts that against the serialised wire body, not against an object.
+
+What is tagged: `service`, `environment`, `org_id`, `call_id`, `where`. Ids only — an `org_id` that
+is not shaped like an id is dropped rather than sent, because a tenant NAME passed where an id was
+expected is the likeliest way identity leaks and both are strings.
+
+### 10.2 The alerts — `scripts/alerts.js`
+
+Twelve checks, on **business ratios** rather than process liveness, because technical monitoring
+would not have caught the incident that prompted them: no exception was thrown, every container was
+healthy, and the queue was empty because work was completing.
+
+```cron
+*/5 * * * *  cd /opt/aura/platform && node scripts/alerts.js       >> /var/log/aura-alerts.log 2>&1
+0   9 * * *  cd /opt/aura/platform && node scripts/alerts.js --digest >> /var/log/aura-alerts.log 2>&1
+```
+
+```bash
+ALERT_WEBHOOK_URL=https://...        # Slack / Discord / Chat / Mattermost / n8n, same body shape
+ALERT_TIMEZONE=Asia/Kolkata          # decides what "a business hour" means
+BACKUP_DIR=/opt/aura/platform/supabase/selfhost/backups
+RABBITMQ_MANAGEMENT_URL=http://localhost:15672   # optional; queue depth is skipped without it
+ALERT_REMIND_AFTER_MS=21600000       # 6h between reminders for a still-firing alert
+```
+
+| Check | Fires when | Why that threshold |
+|---|---|---|
+| `asr_success` | <80% of audio-bearing calls complete in 1h, ≥20 calls | P1's exact signature. Would have fired 2026-08-13. `NO_AUDIO` excluded — those never had audio. |
+| `provider_parked` | any vendor parked in `asr_provider_health` | Names the vendor, so the alert is actionable rather than worrying |
+| `queue_depth` | >500 ready messages | The worker is dead or losing |
+| `stuck_transcribing` | any call >2h in TRANSCRIBING | The poller died; invisible to both retry sweeps |
+| `zero_ingest` | 0 calls in a business hour with active devices | FCM, pairing, or the APK |
+| `device_silence` | any active device unseen >48h | A sleeping phone records nothing |
+| `backup_age` | newest dump >36h old, or <1MB | A script that exits 0 having written nothing looks like success |
+| `disk_space` | >80% on `/` | MinIO grows monotonically |
+| `fleet_behind` | a built APK is unpublished, or devices ≥2 builds behind | This was invisible for four weeks (P3) |
+| `worker_heartbeat` | no beat for 10 minutes | The one signal with no false negative |
+| `platform_incidents` | any live `source='system'` ticket | One line carries the occurrence count |
+| `storage_runway` | <60 days of free space at the measured rate | A projection is a number you can put in a calendar |
+| `monitor_broken` | any check throws | A monitor that silently stops covering something is this document's whole lesson applied to itself |
+
+**The daily digest is not a courtesy.** Silence from a monitor is ambiguous — fixed, or dead? — and
+an alarm nobody has ever seen fire is an alarm nobody trusts. The 09:00 line is the daily proof that
+the thing runs at all.
+
+Useful by hand:
+
+```bash
+node scripts/alerts.js --list            # what is firing, and whether it ever reached anybody
+node scripts/alerts.js --dry-run         # check without notifying
+node scripts/alerts.js --test smoke      # prove the webhook works, end to end
+```
+
+`--list` marks a firing alert `[NEVER DELIVERED]` when `last_notified_at` is NULL. That is the
+misconfigured-webhook case, and it is the one failure a monitoring system cannot report any other
+way.
+
+### 10.3 From outside the box
+
+`.github/workflows/uptime.yml`, every 15 minutes, with `UPTIME_WEBHOOK` as a repo secret and
+`UPTIME_CONSOLE_URL` / `UPTIME_API_HEALTH_URL` as repo variables. **If the VPS is down the on-box
+cron is down too**, so this is the only check that can report a total outage — and it is the only
+one that must not live on the box. It hits unauthenticated health paths only, so no credential sits
+in a public repository's CI.
+
+It proves "the process is answering", not "the product is working". §10.2 is the second question,
+and the two are complementary: `GET /health` answering 200 is exactly what was true for 62 days.
+
+### 10.4 Verifying it, which is the part people skip
+
+Break things on purpose, in staging:
+
+```bash
+# 1. the vendor refuses us  → asr_success + provider_parked + platform_incidents
+docker exec aura-test-api env SARVAM_API_KEY=invalid ...   # or park it by hand:
+psql -c "UPDATE asr_provider_health SET parked_until = now() + interval '1 hour',
+         last_reason = 'provider_out_of_credit' WHERE provider = 'sarvam'"
+
+# 2. the worker dies        → worker_heartbeat, within 10 minutes
+docker compose stop worker
+
+# 3. the backup stops       → backup_age, within 36 hours (or touch an old file to test now)
+
+# 4. delivery works at all  → the one test that proves the pipe
+node scripts/alerts.js --test smoke
+gh workflow run uptime.yml -f force_failure=true
+```
+
+**An alert nobody has ever seen fire has not been tested.** Each of the four above should land in
+the channel; `--list` should then show the condition clearing and a `RESOLVED` line should be posted
+exactly once.

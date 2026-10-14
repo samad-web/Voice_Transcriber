@@ -225,6 +225,23 @@ const NON_TENANT_TABLES = new Set([
   //                     worker on the admin pool, read by the operator console
   //                     and the alert cron on the same pool.
   "asr_provider_health",
+  // platform_alerts, platform_heartbeats
+  //                     0203. What is wrong with the PLATFORM and whether a
+  //                     human has been told, plus when each long-lived process
+  //                     last proved it was running. An alert is about a
+  //                     vendor's wallet, a disk, a queue or a process - none of
+  //                     which belong to a tenant - and a per-tenant copy of
+  //                     "the disk is 81% full" would be four copies of one
+  //                     fact.
+  //
+  //                     Written only by scripts/alerts.js and the worker's
+  //                     heartbeat, both on the admin pool. RLS FORCED with no
+  //                     policy; `aura_app`, PUBLIC and all three Supabase API
+  //                     roles revoked. Neither holds tenant data: the detail
+  //                     column carries a count and a threshold, never a
+  //                     number, a name or any call content.
+  "platform_alerts",
+  "platform_heartbeats",
 ]);
 
 /**

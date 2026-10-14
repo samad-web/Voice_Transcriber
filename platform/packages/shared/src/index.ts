@@ -188,3 +188,11 @@ export * from "./kpi-catalog";
 export * from "./kpi-scoring";
 export * from "./insights-settings";
 export * from "./ingest-schemas";
+
+/**
+ * Error reporting (doc 49 P2-A). Dependency-free and allowlist-shaped: an
+ * event is CONSTRUCTED from an error type, a scrubbed message, stack frames and
+ * five permitted tags, so there is no field a transcript could travel in. See
+ * the file header for why that is not the Sentry SDK.
+ */
+export * from "./observability";
