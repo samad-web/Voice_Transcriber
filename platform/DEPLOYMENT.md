@@ -294,8 +294,29 @@ Then install the vhosts and let certbot add TLS:
 sudo cp docker/nginx-aura.conf /etc/nginx/sites-available/aura
 sudo ln -s /etc/nginx/sites-available/aura /etc/nginx/sites-enabled/aura
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d $APP_DOMAIN -d $STORAGE_DOMAIN
+sudo certbot --nginx -d $APP_DOMAIN -d $STORAGE_DOMAIN -d $LEGACY_APP_DOMAIN
 ```
+
+`$LEGACY_APP_DOMAIN` is in that list because the live deployment answers on two
+names, and has since the 2026-10-14 rename to `auratel.sirahdigital.in`:
+
+| Host | Serves | Can it be retired? |
+| --- | --- | --- |
+| `auratel.sirahdigital.in` | `/` marketing, `/admin` console, `/v1` API | — it is the primary |
+| `aura.sirahagents.com` | `/v1` API + the console, marketing root 301s away | **No. Not ever.** |
+| `storage.aura.sirahagents.com` | device uploads to MinIO | Only as a migration, not an edit |
+| `sirahagents.com`, `www.` | 301 to the primary | Yes, once nothing links to them |
+
+The legacy host is permanent because each handset stored its upload hostname at
+enrolment (`ActivationStore.apiBaseUrl`) and **a phone in the field cannot be
+re-pointed remotely** — not by push, not by an app update, because an installed
+APK cannot rewrite prefs it already holds. Dropping that vhost does not produce
+an error anywhere: uploads simply stop, and it surfaces days later as a fall in
+call volume. `.github/workflows/uptime.yml` probes it separately for that reason.
+
+`storage.aura.sirahagents.com` keeps its name on purpose: the hostname is part of
+what `S3_PUBLIC_ENDPOINT` signs, so renaming it invalidates both the signatures
+and every presigned URL already handed to a phone.
 
 `nginx-aura.conf` ships HTTP-only by design — certbot rewrites those blocks in
 place to add `listen 443 ssl`, the certificate paths and the `:80` redirect.
@@ -1221,3 +1242,108 @@ NULL. All nine shapes were executed against Postgres; the matrix is in 0206's VE
 remembering the general form: *a constraint written as a disjunction of branches, any one of which
 can go NULL on the very column combination being guarded, is a constraint that silently passes the
 case it was written for.*
+
+## 14. The commercial dashboard (Build docs/49 P13c)
+
+The operator hub had seven fleet tiles and **no commercial view whatsoever** — no revenue, MRR,
+plan mix, outstanding cash, churn, trial conversion or revenue per tenant. For the operator of a
+SaaS those are the numbers the screen exists to show. This section is what it now shows, what it
+deliberately does not, and the one migration that would close the gap.
+
+### 14.1 What shipped
+
+One read, `GET /v1/admin/commercial`, scoped by `operatorOrgScope` like every other cross-tenant
+read, rendered above the existing operational tiles rather than instead of them.
+
+| Row | What |
+|---|---|
+| **The business** | MRR (+ at-risk, trialing and unpriced counts), Clients, Net new this month, Unsettled, Capture minutes vs plan |
+| **Three charts** | Billings by month stacked by plan · Client lifecycle funnel · Revenue concentration |
+| **Is it being delivered** | Transcription success rate (24h, audio-bearing only) · Open platform incidents, with occurrences summed |
+| **Clients** | plan, MRR, last order, capture used vs limit, transcription rate, last call, **onboarded by**, status |
+
+Every block returns an `evidence` sentence and the console **renders it**. Three of these figures
+are weaker than they look, and saying which — on the screen, not in a footnote — is what makes the
+other nine trustworthy.
+
+### 14.2 Three corrections to the plan's source mapping
+
+Doc 49 says "nothing below needs new data collection; it needs aggregation and a layout". That is
+true of most of it. These three were established by reading the schema, and each matters:
+
+**1. There is no `subscriptions` table.** It is `org_subscriptions`, one row per org, holding the
+current plan and nothing historical.
+
+**2. `invoices` is not ours.** The plan sources "Outstanding (overdue ₹)" from `invoices` (0176).
+That table belongs to the *tenant's* own finance module — it carries `account_id`, `contact_id`,
+`deal_id`, `quotation_id` — and it is a tenant invoicing **their** customers. Summing it would
+report our clients' receivables as our cash: wrong, and wrong in our favour, on a screen somebody
+makes decisions from. What clients owe **us** is `billing_orders` with `status = 'pending'`, which
+has no `due_date` column at all — so the tile says **UNSETTLED**, not overdue, and says why.
+
+**3. MRR history is not reconstructible.** Nothing records what a tenant's price was in a past
+month. "MRR by month" would have to be invented from today's prices applied backwards, which would
+redraw history on every upgrade and show a tenant who joined last week as having paid us for a
+year. The chart is **BILLINGS by month**, under that name, and the panel states that an annual
+payment lands as one tall month.
+
+And one limit that is not a correction: **the four `insights`-family plans have no price anywhere**
+— no `plan_prices` row, `plans.price_minor` NULL, nothing in `pricing.ts`. A tenant on one of those
+resolves to `unpriced` and is counted and named, never treated as free. Verified by executing it:
+`scripts/verify-commercial.js` asserts the price resolves to NULL for an insights plan, so the day
+somebody publishes those prices, that check fails and tells you this note is out of date.
+
+The funnel carries a fourth, which is this build's own: **it starts at PROVISIONED, not at signup.**
+An operator-provisioned tenant has no `org_signups` row, so a signup-first funnel is smaller at the
+top than at the second step — it would climb, and a funnel that goes up is two unrelated numbers in
+a shape that implies a rate. Paid-but-never-provisioned is reported beside it, labelled
+platform-wide because those rows have no org to attribute.
+
+### 14.3 The one migration that would fix most of this
+
+An **`org_subscription_events`** ledger — a row per plan change, with the price at the time:
+
+```
+org_id, at, event ('started'|'upgraded'|'downgraded'|'cancelled'|'renewed'),
+plan_id, billing_period, price_minor, currency, actor
+```
+
+That single table closes three things at once:
+
+- **real MRR history**, because each month's MRR becomes the sum of prices in force during it;
+- **an exact churn date**, replacing the proxy the Net-new tile currently labels as one (today it
+  counts subscriptions now `cancelled` whose row was last touched this month — an upper bound,
+  because any other update to that row in the same month also moves `updated_at`);
+- **trial conversion**, which cannot be measured at all right now.
+
+It is the highest-value follow-on to this screen, and it is cheap: one table, written at the two
+places that already change a subscription.
+
+### 14.4 Known gaps on this screen
+
+| Gap | Consequence |
+|---|---|
+| **No operator billing page.** `admin/billing/orders` exists in the API with settle and cancel actions; the console has no page in front of it. | Doc 49's "Chase overdue" CTA has no destination, so it is **absent rather than dead** — a link to a 404 on a dashboard is worse than no link. Every unsettled order is still visible per client in the Clients table, with its age. |
+| **`platform-billing-admin.controller.ts` is not scoped** by `operatorOrgScope`. | A superadmin calling it reads the platform's billing, not their own book. Named in `operator-scope.spec.ts`'s `NOT_CLIENT_SCOPED` with this reason rather than silently passing, so it cannot be forgotten. Scope it when the page above is built. |
+| **Margin is not shown.** Doc 49 lists "cost per tenant" and "margin"; nothing records per-tenant ASR or storage cost. | The Capture tile is the nearest honest thing: minutes used against minutes sold, with over-limit and under-25%-used both called out, because margin leaks in both directions. |
+
+### 14.5 Verifying it
+
+```bash
+# The queries, executed against a real database with a five-tenant fixture.
+# Needs Docker, so it is not in CI - which is exactly why it exists: three of
+# the four worst bugs this project has shipped were SQL that typechecked.
+docker compose -f docker-compose.test.yml up -d postgres
+node packages/db/migrate.js            # against the ephemeral DB
+DATABASE_URL=postgresql://aura:aura_dev_password@localhost:55432/callintel \
+  node scripts/verify-commercial.js
+```
+
+It checks five status vocabularies against the CHECK constraints that own them (the
+`integration-watchdog` bug generalised: a filter on a value a column cannot hold is a silent
+no-op), executes all five queries, asserts the funnel is monotonic, and proves the scope gate is
+load-bearing by running the fleet query with a `FALSE` gate and requiring zero rows.
+
+The arithmetic is tested separately and without a database in
+`packages/shared/src/commercial.test.ts` — the trial branch, the monthly uplift, the pack that must
+not count as recurring revenue, two currencies that must never be added together.

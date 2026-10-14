@@ -86,9 +86,11 @@ const NOT_CLIENT_SCOPED: Record<string, string> = {
     "The per-tenant assignment route takes an explicit orgId and is covered by " +
     "TenantGuard",
   "modules/billing/platform-billing-admin.controller.ts":
-    "NOT YET SCOPED, and listed rather than silently passing. This is the revenue read " +
-    "P13c builds on; it is scoped as part of that work, and until then a superadmin " +
-    "sees the platform's billing. Tracked in DEPLOYMENT.md §13",
+    "NOT SCOPED, and listed rather than silently passing. P13c's commercial dashboard is " +
+    "built and reads billing_orders through its OWN scoped query, so the dashboard is " +
+    "correct. This controller is the settle/cancel surface, which the operator console " +
+    "has no page in front of at all - so nothing in the console reaches it today. Scope " +
+    "it when that page is built; see DEPLOYMENT.md §14.4",
 };
 
 describe("every cross-tenant client read is scoped, or says why not", () => {

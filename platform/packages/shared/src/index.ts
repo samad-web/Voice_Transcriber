@@ -184,6 +184,16 @@ export * from "./pricing";
 // it, which is what stops four of them disagreeing about whether a 25-hour
 // top-up has landed.
 export * from "./plan-effective";
+// `commercial` after `pricing`: the operator console's revenue arithmetic
+// (doc 49 P13c). It owns the questions a SQL aggregate cannot be tested on -
+// a trial that has not converted, a subscription past due, a plan with no
+// published price, two currencies that must never be added together - and its
+// header records three places the plan named a source that does not mean what
+// it says. Its lifecycle funnel type is `LifecycleStep`, not `FunnelStep`:
+// `performance-overview` already owns that name for a telecaller's
+// call-to-outcome funnel, and two of them in one barrel is an ambiguous
+// re-export that fails this build.
+export * from "./commercial";
 export * from "./kpi-catalog";
 export * from "./kpi-scoring";
 export * from "./insights-settings";

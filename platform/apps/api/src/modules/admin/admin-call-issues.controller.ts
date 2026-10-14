@@ -40,6 +40,16 @@ const ListQuery = z.object({
   category: CallIssueCategory.optional(),
   severity: CallIssueSeverity.optional(),
   orgId: z.string().uuid().optional(),
+  /**
+   * Who opened the ticket: the CLIENT, or the platform against itself (P12).
+   *
+   * Added for doc 49 P13c's incidents CTA. The dashboard tile counts
+   * source='system' tickets, and a link from that tile to an unfiltered queue
+   * would have moved the work rather than started it - the operator would land
+   * on a list mixing platform outages with clients complaining about a
+   * transcript and have to re-find what they clicked.
+   */
+  source: z.enum(["client", "system"]).optional(),
   q: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -157,7 +167,7 @@ export class AdminCallIssuesController {
   async list(@Req() req: PrincipalRequest, @Query() query: unknown) {
     const parsed = ListQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    const { state, category, severity, orgId, q, limit, offset } = parsed.data;
+    const { state, category, severity, orgId, source, q, limit, offset } = parsed.data;
     const me = req.principal?.operatorEmail ?? null;
 
     // ── SCOPED (doc 49 P13b) ───────────────────────────────────────────────
@@ -168,7 +178,8 @@ export class AdminCallIssuesController {
     // mixing of books this filter exists to stop. $10 - after the nine the
     // query already takes.
     const queueScope = scopeForRequest(req);
-    const queueGate = operatorScopeSql(queueScope, "r.org_id", 10);
+    // $10 is the source filter, so the scope gate is $11.
+    const queueGate = operatorScopeSql(queueScope, "r.org_id", 11);
 
     const { rows } = await this.db.adminPool().query(
       `SELECT ${QUEUE_COLUMNS}
@@ -186,6 +197,7 @@ export class AdminCallIssuesController {
           AND ($6::uuid IS NULL OR r.org_id = $6)
           AND ($7::text IS NULL OR r.description ILIKE '%' || $7 || '%'
                OR r.ref::text = $7 OR o.name ILIKE '%' || $7 || '%')
+          AND ($10::text IS NULL OR r.source = $10)
         -- Worst first, then oldest. Severity sorts by MEANING, not alphabetically:
         -- blocking < wrong < minor is not the text order, and sorting by the text
         -- would put 'blocking' after 'minor' and quietly bury the urgent ones.
@@ -202,6 +214,7 @@ export class AdminCallIssuesController {
         q ?? null,
         limit,
         offset,
+        source ?? null,
         ...queueGate.params,
       ],
     );

@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { SupabaseAdminService } from "../owner/supabase-admin.service";
 import { AdminController } from "./admin.controller";
 import { AdminCallIssuesController } from "./admin-call-issues.controller";
+import { AdminCommercialController } from "./admin-commercial.controller";
 import { OperatorInvitesController } from "./operator-invites.controller";
 import { OperatorInvitesService } from "./operator-invites.service";
 import { OperatorsController } from "./operators.controller";
@@ -28,6 +29,11 @@ import { OperatorsController } from "./operators.controller";
     OperatorsController,
     OperatorInvitesController,
     AdminCallIssuesController,
+    // The commercial view (doc 49 P13c). Its own controller rather than more
+    // routes on AdminController: it is one read that joins subscriptions,
+    // the price list, billing orders, usage and the escalation queue, and
+    // every query in it is scoped by operatorOrgScope.
+    AdminCommercialController,
   ],
   providers: [SupabaseAdminService, OperatorInvitesService],
 })

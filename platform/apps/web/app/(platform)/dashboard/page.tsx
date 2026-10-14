@@ -12,6 +12,8 @@ import {
 import { Card, MonoLabel, Sparkline, STATE_TONE, StatCard, StatusChip } from "@aura/ui";
 import { JoinedNotice } from "@/components/joined-notice";
 import { LocalTime } from "@/components/local-time";
+import { CommercialSection } from "./_commercial";
+import type { Commercial } from "./_commercial/types";
 import { OperatorScopeNote } from "@/components/operator-scope-note";
 import { PageHeader } from "@/components/page-header";
 import { TenantSwitcher } from "@/components/tenant-switcher";
@@ -116,12 +118,17 @@ export default async function DashboardPage({
   const session = justJoined ? await getSessionUser() : null;
   const { tenants, orgId, activeTenant } = await resolveTenantScope(org);
 
-  const [fleet, data, activeUsers, bookingRate, health] = await Promise.all([
+  const [fleet, data, activeUsers, bookingRate, health, commercial] = await Promise.all([
     apiGetAdmin<Fleet>("/v1/analytics/fleet"),
     apiGetAs<Overview>("/v1/analytics/overview", orgId),
     apiGetAdmin<ActiveUsers>("/v1/analytics/active-users"),
     apiGetAdmin<BookingRate>("/v1/analytics/booking-rate"),
     apiGetAdmin<Health>("/v1/admin/health"),
+    // Doc 49 P13c. Its own read rather than more fields on /analytics/fleet:
+    // it joins subscriptions, the price list, billing orders, usage and the
+    // escalation queue, and a tenant-health rollup has no business growing a
+    // revenue join.
+    apiGetAdmin<Commercial>("/v1/admin/commercial"),
   ]);
 
   if (!data && !fleet) {
@@ -179,10 +186,27 @@ export default async function DashboardPage({
         <JoinedNotice email={session?.email || null} activityHref="/account/login-activity" />
       ) : null}
 
+      {/* ── THE BUSINESS, FIRST (doc 49 P13c) ────────────────────────────
+          This page was "a competent OPERATIONAL dashboard" with no commercial
+          view whatsoever - no revenue, MRR, plan mix, outstanding cash, churn
+          or revenue per tenant. That section goes ABOVE the fleet tiles, not
+          below: an operator opening this screen should see what the business
+          is doing before seeing how many devices are paired.
+
+          The operational rows that were here are kept in full and moved down,
+          which is what doc 49 asks for - they are the right numbers, they were
+          just the only ones. */}
+      {commercial ? <CommercialSection data={commercial} /> : null}
+
       {/* Doc 49 P13b: ahead of the tiles, because every tile is computed over
           the scoped rows. A caption that arrives after the numbers is a
-          correction. */}
-      {fleet ? (
+          correction. Rendered here as well as inside the commercial section
+          because the two sections come from two different reads, and a reader
+          who scrolls past the first one must not meet unqualified numbers.
+
+          Suppressed when the commercial section already said it, so the page
+          does not carry the same caption twice. */}
+      {fleet && !commercial ? (
         <OperatorScopeNote scope={fleet.scope} note={fleet.scopeNote} subject="clients" />
       ) : null}
 

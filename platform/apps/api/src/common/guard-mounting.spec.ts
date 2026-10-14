@@ -138,6 +138,7 @@ import { StaffPerformanceController } from "../modules/owner/staff-performance.c
 import { OwnerCallsController } from "../modules/owner/owner-calls.controller";
 import { OwnerCallIssuesController } from "../modules/owner/owner-call-issues.controller";
 import { AdminCallIssuesController } from "../modules/admin/admin-call-issues.controller";
+import { AdminCommercialController } from "../modules/admin/admin-commercial.controller";
 import { CallTriageController } from "../modules/owner/call-triage.controller";
 import { CallDispositionsController } from "../modules/owner/call-dispositions.controller";
 import { IntegrationsController } from "../modules/owner/integrations.controller";
@@ -251,6 +252,7 @@ export const CONTROLLERS: Array<Type<unknown>> = [
   OwnerCallsController,
   OwnerCallIssuesController,
   AdminCallIssuesController,
+  AdminCommercialController,
   CallTriageController,
   CallDispositionsController,
   IntegrationsController,
@@ -910,6 +912,12 @@ const CROSS_TENANT = [
   // puts behind operatorScopeSql, so a superadmin sees adoption across THEIR
   // clients rather than across the platform.
   "GET /admin/module-adoption",
+  // The commercial view (doc 49 P13c). Cross-tenant for the same reason
+  // /admin/tenants is: revenue, churn and concentration are questions about a
+  // BOOK of clients, and there is no single org for TenantGuard to scope to.
+  // Every query inside it is scoped by operatorOrgScope, so a superadmin reads
+  // their own revenue rather than the platform's.
+  "GET /admin/commercial",
   "PATCH /admin/tenants/:orgId/modules",
   // Doc 27 §6.4: the operator's storage quota. Separate from the modules PATCH
   // so it cannot interfere with feature reconciliation. Display and warn only.
@@ -1020,6 +1028,12 @@ const CROSS_TENANT = [
  *   * the two reprocess routes (0147) - they spend at the ASR provider.
  */
 const OPERATOR_ONLY_ROUTES = [
+  // The commercial view (doc 49 P13c). Operator-only with no exceptions: it
+  // reports every client's plan, revenue, unsettled cash and transcription
+  // rate side by side, so a tenant user reaching it would be reading their
+  // competitors' numbers. `OperatorOnlyGuard` denies any request carrying a
+  // real user identity, which is both shapes a person arrives in.
+  "GET /admin/commercial",
   // Plan management (0192). Operator-only for the same reason the instance
   // routes are, and with more force while there is no payment provider: an
   // owner who could apply a plan to their own org would be granting themselves
@@ -2640,7 +2654,7 @@ describe("guard mounting (inventory 13 §1.1)", () => {
   // below were kept current - which made the one line a reader checks first the
   // one line that was wrong. Restated from the assertions as of Build docs/40
   // §B1; if you change a count below, change it here too.
-  it("has 834 routes, partitioned 715 tenant / 58 cross-tenant / 18 device / 26 unguarded / 1 internal / 7 portal", () => {
+  it("has 835 routes, partitioned 715 tenant / 59 cross-tenant / 18 device / 26 unguarded / 1 internal / 7 portal", () => {
     // The counts inventory 13 §1.1 closes with, plus the funnel's ten, plus the
     // CRM object model's 33 (all tenant-scoped: 4 accounts + 5 contacts + 5
     // deals + 4 pipelines + 4 custom-field-definitions + 6 merge + 5 roles),
@@ -2889,8 +2903,13 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // /admin reads. Worth recording that this count caught it: the route shipped
     // in the adoption commit without being entered here, which is exactly the
     // omission the number exists to refuse.
-    expect(ROUTES).toHaveLength(834);
-    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(834);
+    // 835: plus GET /admin/commercial (doc 49 P13c) - the operator console's
+    // revenue, churn, lifecycle and concentration read. One route rather than
+    // five, because every figure on that screen is compared against the
+    // others and five queries against a moving database can return a set that
+    // was never simultaneously true.
+    expect(ROUTES).toHaveLength(835);
+    expect(new Set(ROUTES.map((r) => r.route)).size).toBe(835);
 
     const unguarded = ROUTES.filter((r) => r.guards.length === 0);
     const device = ROUTES.filter((r) => r.guards.includes("DeviceAuthGuard"));
@@ -2993,10 +3012,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
         tenantScoped.length +
         internal.length +
         partner.length,
-    ).toBe(834); // = ROUTES.length: every route in exactly one class
+    ).toBe(835); // = ROUTES.length: every route in exactly one class
   });
 
-  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 758 principal routes", () => {
+  it("mounts AdminKeyGuard FIRST and TenantGuard SECOND on all 759 principal routes", () => {
     // 422: plus lead boards' seven (0136), all tenant-scoped.
     // 414 = 382 tenant-scoped principal + 32 cross-tenant, after the
     // workspace clock's GET/PUT /owner/time-settings (doc 30).
@@ -3070,7 +3089,10 @@ describe("guard mounting (inventory 13 §1.1)", () => {
     // key with a user header, like every other route on this controller.
     // 758: plus GET /admin/module-adoption (doc 49 P11), AdminKeyGuard then
     // TenantGuard like every other read on AdminController.
-    expect(principalRoutes).toHaveLength(758);
+    // 759: plus GET /admin/commercial (doc 49 P13c). AdminKeyGuard,
+    // TenantGuard, OperatorOnlyGuard - the escalation queue's chain, because
+    // it answers the same question: no tenant user may read this at all.
+    expect(principalRoutes).toHaveLength(759);
 
     for (const { route, guards } of principalRoutes) {
       expect([route, guards[0]]).toEqual([route, "AdminKeyGuard"]);
