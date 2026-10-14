@@ -8,22 +8,25 @@
 /**
  * Public origin of the marketing site.
  *
- * CHANGED 2026-08-09. This used to be the apex, with a note that it was
- * emphatically NOT aura.sirahagents.com. The apex turned out to resolve to a
- * different server entirely (3.146.153.124), so there was nowhere to publish;
- * aura.sirahagents.com is the host we actually control, and it now serves both.
- * The split is by path, in nginx:
+ * CHANGED 2026-10-14 to the brand domain, auratel.sirahdigital.in. Before that
+ * it was aura.sirahagents.com (itself a change from the apex on 2026-08-09,
+ * when the apex turned out to resolve to a different server entirely —
+ * 3.146.153.124 — so there was nowhere to publish).
  *
- *   /v1/*     the API           - UNCHANGED, and it must stay that way
+ * One host still serves all three surfaces, split by path in nginx:
+ *
+ *   /v1/*     the API           - also answers on the legacy host, forever
  *   /admin*   the console       - Next `basePath`, see apps/web/next.config.ts
  *   /         this site
  *
- * The /v1 line is the load-bearing one. Enrolled handsets carry this hostname
- * in their activation payload and upload recordings to it; they cannot be
- * re-pointed remotely, so that prefix is effectively permanent.
+ * aura.sirahagents.com has NOT gone away and cannot: handsets enrolled before
+ * the cutover carry that hostname in their activation payload and upload
+ * recordings to /v1 on it, with no remote way to re-point them. It keeps
+ * serving /v1 and the console, and 301s the marketing root here — so this is
+ * the one canonical origin for the public pages. See docker/nginx-aura.conf.
  */
 export const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://aura.sirahagents.com";
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://auratel.sirahdigital.in";
 
 /**
  * The live console. Existing customers sign in here.
@@ -33,7 +36,7 @@ export const SITE_URL =
  * lands on THIS site's 404, which is a particularly bad way to greet a customer
  * trying to sign in.
  */
-export const CONSOLE_URL = "https://aura.sirahagents.com/admin";
+export const CONSOLE_URL = "https://auratel.sirahdigital.in/admin";
 
 /**
  * The one console sign-in, shown as a quiet "Log in" link in the header and
@@ -173,18 +176,25 @@ export const NAV: ReadonlyArray<{ href: string; label: string }> = [
    The handset app.
 
    Hardcoded for the same reason CONSOLE_URL is: this is where the API lives,
-   nginx has routed `/v1/*` there since before this site existed, and enrolled
-   handsets carry that hostname in their activation payload - so it is the most
-   permanent fact in the deployment, not a value worth making configurable.
+   and nginx has routed `/v1/*` on the primary host since before this site
+   existed.
+
+   This is the DOWNLOAD origin for a human clicking a link in a browser, which
+   is why it moved to the brand domain on 2026-10-14. It is not the origin a
+   handset uploads to — that one is stored per-device in the app's own prefs
+   (ActivationStore.kt) and for every phone enrolled before the cutover it is
+   still aura.sirahagents.com. Do not collapse the two: they look like the same
+   fact and are not, and the legacy host serves /v1 precisely so they can
+   disagree safely.
 
    Absolute rather than relative even though this site is served from the SAME
    origin today. A relative `/v1/...` would silently 404 the day the marketing
-   site is also served from the apex, where nginx has no /v1 block - and it
-   would fail as a broken download rather than as a broken page, which is the
-   kind of breakage nobody reports.
+   site is served from somewhere nginx has no /v1 block - and it would fail as
+   a broken download rather than as a broken page, which is the kind of
+   breakage nobody reports.
    ──────────────────────────────────────────────────────────────────────────── */
 
-export const API_ORIGIN = "https://aura.sirahagents.com";
+export const API_ORIGIN = "https://auratel.sirahdigital.in";
 
 /** The public APK. 302s to a presigned URL that expires in fifteen minutes,
  *  so this link is the shareable one - never the address it redirects to. */

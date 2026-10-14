@@ -66,8 +66,14 @@ jobs:
           set -uo pipefail
           # Configured as repository VARIABLES, not secrets: both are public
           # hostnames. A secret here would only make a red run harder to read.
-          CONSOLE="${{ vars.UPTIME_CONSOLE_URL || 'https://aura.sirahagents.com' }}"
-          API_HEALTH="${{ vars.UPTIME_API_HEALTH_URL || 'https://aura.sirahagents.com/api/health' }}"
+          CONSOLE="${{ vars.UPTIME_CONSOLE_URL || 'https://auratel.sirahdigital.in' }}"
+          API_HEALTH="${{ vars.UPTIME_API_HEALTH_URL || 'https://auratel.sirahdigital.in/api/health' }}"
+          # The legacy host is probed SEPARATELY and on purpose. It carries no
+          # brand and nobody browses it, so nothing else here would notice it
+          # going dark - but every handset enrolled before 2026-10-14 uploads
+          # recordings to /v1 on it and cannot be re-pointed. Losing it looks
+          # like a gradual fall in call volume, days later, not like an outage.
+          LEGACY_API_HEALTH="${{ vars.UPTIME_LEGACY_API_HEALTH_URL || 'https://aura.sirahagents.com/api/health' }}"
 
           failures=()
 
@@ -88,6 +94,7 @@ jobs:
 
           probe "console" "$CONSOLE"
           probe "api health" "$API_HEALTH"
+          probe "api health (legacy handset host)" "$LEGACY_API_HEALTH"
 
           if [ "${{ inputs.force_failure }}" = "true" ]; then
             failures+=("forced failure from workflow_dispatch - this is a delivery test, ignore")

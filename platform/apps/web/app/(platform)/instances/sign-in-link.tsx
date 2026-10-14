@@ -8,7 +8,7 @@ import { Button, Card, MonoLabel, useAlert, useToast } from "@aura/ui";
  * The one address a customer signs in at: `<this origin>/login`.
  *
  * DELIBERATELY WITHOUT THE BASE PATH. In production the console is mounted at
- * /admin, because it shares aura.sirahagents.com with the marketing site - but
+ * /admin, because it shares auratel.sirahdigital.in with the marketing site - but
  * that prefix is an accident of hosting, not something to put in front of a
  * client, so nginx carves `/login` out of the marketing root and proxies it to
  * the console's own /admin/login (`location = /login` in

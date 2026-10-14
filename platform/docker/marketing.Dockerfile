@@ -8,7 +8,7 @@
 #
 # ── THIS IS NOT THE CONSOLE IMAGE ──────────────────────────────────────────
 #
-# aura-web serves aura.sirahagents.com: authenticated, holds ADMIN_API_KEY, talks
+# aura-web serves auratel.sirahdigital.in: authenticated, holds ADMIN_API_KEY, talks
 # to the API. This one serves the public apex and is the opposite in every way —
 # unauthenticated, internet-facing, and it holds a database credential.
 #

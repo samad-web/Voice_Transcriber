@@ -37,7 +37,7 @@ function first(value: string | string[] | undefined): string | null {
  * `noindex`, and this is a decision rather than caution.
  *
  * The page is a customer's lead form on OUR domain. Indexing it would put
- * their campaign landing pages into search results under sirahagents.com,
+ * their campaign landing pages into search results under auratel.sirahdigital.in,
  * compete with the tenant's own site for their own brand terms, and leave a
  * closed form's thank-you text in Google's cache for months. The link is for
  * sharing, not for ranking.

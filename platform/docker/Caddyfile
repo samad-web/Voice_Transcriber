@@ -36,6 +36,46 @@
 	}
 }
 
+# ── LEGACY handset host: /v1 only. DO NOT DELETE ─────────────────────────────
+# The brand domain changed on 2026-10-14 ({$APP_DOMAIN} above). Every handset
+# enrolled before then stored the OLD hostname in its own prefs
+# (ActivationStore.kt) and uploads recordings to /v1 on it; there is no remote
+# way to re-point a phone in the field. So this vhost outlives the brand.
+#
+# Only /v1 is served. Browser traffic is redirected, because the console and the
+# marketing site should have one address — but a 301 is kept off /v1, where the
+# client is an app that does not follow redirects on an upload.
+#
+# Defaulted rather than required: an operator who has never heard of the old
+# domain should not be able to make Caddy refuse to start, and a deployment with
+# no legacy fleet can point this at anything it owns. On the real box it is the
+# host nginx that serves this, not Caddy — see nginx-aura.conf.
+{$LEGACY_APP_DOMAIN:aura.sirahagents.com} {
+	encode zstd gzip
+
+	handle /v1/* {
+		reverse_proxy api:4000
+	}
+
+	handle {
+		redir https://{$APP_DOMAIN}{uri} permanent
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	log {
+		output file /data/access-legacy.log {
+			roll_size 50MiB
+			roll_keep 5
+		}
+	}
+}
+
 # ── Self-hosted Supabase on its own domain ───────────────────────────────────
 # The console signs in against {$SUPABASE_DOMAIN}/auth/v1, and the browser has
 # to reach the same origin the token was issued for - so this is a real public

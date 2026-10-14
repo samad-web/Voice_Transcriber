@@ -4,7 +4,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   transpilePackages: ["@aura/ui"],
   /**
-   * The console lives under /admin, sharing aura.sirahagents.com with the
+   * The console lives under /admin, sharing auratel.sirahdigital.in with the
    * marketing site (owner's decision, 2026-08-09: the apex points at a
    * different server, and this is the domain we control).
    *
@@ -15,9 +15,10 @@ const nextConfig: NextConfig = {
    * the marketing site answers with its own 404 page, and the console would
    * render unstyled and inert with no error anywhere.
    *
-   * WHAT MUST NOT MOVE: `/v1/*` on this host. Enrolled handsets carry
-   * aura.sirahagents.com in their activation payload and POST recordings to it,
-   * so nginx routes /v1 to the API ahead of everything else. Changing that
+   * WHAT MUST NOT MOVE: `/v1/*`, on BOTH hosts. Handsets enrolled before the
+   * 2026-10-14 rename carry aura.sirahagents.com in their activation payload
+   * and POST recordings to it, so nginx keeps a second vhost on that name
+   * serving /v1 and routes it to the API ahead of everything else. Deleting it
    * bricks every phone in the field, and they cannot be re-pointed remotely.
    *
    * Configurable so local development stays at the root: `pnpm dev` serves the

@@ -81,7 +81,7 @@ export function MessageTemplates({ initial }: { initial: MessageTemplate[] }) {
 const SAMPLE_NAME = "Ramesh Kumar";
 const SAMPLE_SLOT = "Tue 12 Aug, 6:30 pm";
 const SAMPLE_MEET = "https://meet.google.com/abc-defg-hij";
-const SAMPLE_LINK = "https://aura.sirahagents.com/reschedule/EXAMPLE";
+const SAMPLE_LINK = "https://auratel.sirahdigital.in/reschedule/EXAMPLE";
 
 function TemplateCard({ template }: { template: MessageTemplate }) {
   const [channel, setChannel] = useState<"whatsapp" | "email">("whatsapp");

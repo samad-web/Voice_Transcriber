@@ -17,8 +17,22 @@ object ActivationStore {
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /**
+     * Where this handset talks to the server.
+     *
+     * The STORED value wins, and that is the whole point. Enrolment writes the
+     * host it was activated against, so a phone enrolled before the 2026-10-14
+     * domain rename keeps uploading to aura.sirahagents.com and keeps working;
+     * nginx serves /v1 on that name indefinitely for exactly this reason
+     * (platform/docker/nginx-aura.conf).
+     *
+     * The default below only applies to an install that has never enrolled, so
+     * changing it re-points NEW devices and no existing one. Do not "fix" a
+     * fleet by editing it - a shipped APK cannot rewrite prefs it already has,
+     * and nothing here reads this at runtime for a device that is activated.
+     */
     fun apiBaseUrl(context: Context): String =
-        prefs(context).getString("api_base_url", "https://aura.sirahagents.com")!!
+        prefs(context).getString("api_base_url", "https://auratel.sirahdigital.in")!!
 
     fun isActivated(context: Context): Boolean =
         prefs(context).getString("device_id", null) != null

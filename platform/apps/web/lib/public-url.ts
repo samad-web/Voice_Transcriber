@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 
 /**
  * The console's public base URL - origin plus basePath, e.g.
- * `https://aura.sirahagents.com/admin`.
+ * `https://auratel.sirahdigital.in/admin`.
  *
  * `PUBLIC_APP_URL` when set (production: docker-compose.prod.yml derives it
  * from APP_DOMAIN + CONSOLE_BASE_PATH, as it does for the API). Otherwise the

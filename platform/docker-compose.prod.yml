@@ -62,6 +62,10 @@ services:
       # Consumed by docker/Caddyfile; both must have A/AAAA records pointing here
       # BEFORE first start or the ACME challenge fails.
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env.production}
+      # The pre-rename host that handsets in the field still upload to. Given a
+      # default rather than required, because the Caddyfile serves only /v1 on
+      # it and a deployment with no legacy fleet must still be able to start.
+      LEGACY_APP_DOMAIN: ${LEGACY_APP_DOMAIN:-aura.sirahagents.com}
       STORAGE_DOMAIN: ${STORAGE_DOMAIN:?set STORAGE_DOMAIN in .env.production}
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env.production}
       # The self-hosted Supabase vhost. Required for the same reason as the two

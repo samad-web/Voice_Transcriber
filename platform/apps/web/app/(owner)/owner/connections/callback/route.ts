@@ -33,7 +33,7 @@ async function redirectTo(_request: Request, path: string, params: Record<string
   // Through consoleUrl, not `new URL(path, origin)`: a redirect does not get
   // the /admin basePath on its own - see lib/console-url.ts. And the PUBLIC
   // origin, not request.url's: behind nginx a route handler sees the address
-  // the server is bound to (https://0.0.0.0:3000), not aura.sirahagents.com.
+  // the server is bound to (https://0.0.0.0:3000), not auratel.sirahdigital.in.
   const url = consoleUrl(await consolePublicOrigin(), path, undefined, FALLBACK);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   return NextResponse.redirect(url);
