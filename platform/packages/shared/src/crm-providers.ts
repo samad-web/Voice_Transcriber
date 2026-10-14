@@ -74,6 +74,36 @@ export interface CrmProviderSpec {
   rateLimitPerMin: number;
   /** Shown in the console. Say the awkward parts out loud. */
   notes?: string;
+  /**
+   * SET WHEN THE PASTED CREDENTIAL EXPIRES ON ITS OWN (doc 49 P10-A).
+   *
+   * Most of this catalogue takes a vendor's ordinary long-lived API key and
+   * nothing expires: HubSpot, Pipedrive, GoHighLevel, Freshsales, Close, Attio,
+   * Keap, Zendesk Sell, Kylas, LeadSquared, Bitrix24. Those are
+   * unattended-production-grade today.
+   *
+   * Four are not - Salesforce, Zoho, monday and Dynamics 365 take an OAuth
+   * ACCESS token, which expires in hours for the first two. Deliveries then 401
+   * until a human rotates the token on the integration card.
+   *
+   * It was already said, in prose, inside `auth.secretHelp`. That is the wrong
+   * place for it twice over: it is only read while somebody is typing the
+   * credential, which is the one moment they are least worried about next
+   * Tuesday, and prose cannot be rendered as a badge or asserted by a test.
+   * A customer who connects Salesforce and finds it dead on Tuesday is worse
+   * off than one who was told.
+   *
+   * Absent means the credential does not expire. Stating it that way round is
+   * deliberate: a NEW connector added without thinking about this is treated as
+   * long-lived, which is true of most vendors, and `crm-providers.test.ts`
+   * pins the four that are not so the list cannot quietly shrink.
+   */
+  credentialExpires?: {
+    /** Roughly how long, in words a customer reads: "an hour", "a few hours". */
+    within: string;
+    /** What they must do, and what happens if they do not. */
+    action: string;
+  };
 }
 
 /**
@@ -204,6 +234,12 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
         ],
       },
     ],
+    credentialExpires: {
+      within: "a few hours, or whenever the Connected App's session times out",
+      action:
+        "Paste a fresh access token here when deliveries start failing. Until the OAuth " +
+        "refresh flow lands, use a Connected App with a long session timeout.",
+    },
     rateLimitPerMin: 300,
     targets: [
       {
@@ -280,6 +316,12 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
         ],
       },
     ],
+    credentialExpires: {
+      within: "one hour",
+      action:
+        "Zoho access tokens last an hour. Paste a fresh one here, or use a self-client " +
+        "token refreshed by hand - this connector cannot refresh it for you yet.",
+    },
     rateLimitPerMin: 100,
     targets: [
       {
@@ -567,6 +609,12 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
     config: [
       { key: "boardId", label: "Board ID", placeholder: "1234567890", required: true },
     ],
+    credentialExpires: {
+      within: "whenever the token's own expiry is reached",
+      action:
+        "monday personal API tokens can be issued without an expiry - do that if the " +
+        "option is offered, because this connector cannot refresh an expiring one yet.",
+    },
     rateLimitPerMin: 60,
     targets: [
       {
@@ -621,6 +669,12 @@ export const CRM_PROVIDERS: CrmProviderSpec[] = [
         required: true,
       },
     ],
+    credentialExpires: {
+      within: "one hour",
+      action:
+        "Dataverse access tokens last an hour. Paste a fresh one here; the OAuth refresh " +
+        "flow for this connector is not built yet.",
+    },
     rateLimitPerMin: 100,
     targets: [
       {

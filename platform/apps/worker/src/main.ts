@@ -7,6 +7,8 @@ import { WorkerModule } from "./worker.module";
 import { analyzeCall, processCall } from "./pipeline/pipeline";
 import { startAsrPoller } from "./pipeline/asr-poll";
 import { startHeartbeat } from "./pipeline/heartbeat";
+import { startCrmTokenRefresh } from "./pipeline/crm-token-refresh";
+import { startIntegrationWatchdog } from "./pipeline/integration-watchdog";
 import { enrichCall, startEnrichmentSweep } from "./pipeline/enrich";
 import { asrBannerLine, preflightAsrProviders, startAsrPreflight } from "./pipeline/asr-preflight";
 import { startReaper } from "./pipeline/reaper";
@@ -163,6 +165,19 @@ async function bootstrap() {
    * minutes later would keep the funded vendor idle for five hours and fifty.
    */
   startAsrPreflight();
+  /**
+   * A CRM connector that has stopped accepting deliveries says so (0204, doc
+   * 49 P10-C). The outbox already means nothing is lost; what was missing is
+   * anybody being told, so a token that expired on Tuesday went unnoticed until
+   * a customer asked why their CRM was three weeks behind.
+   */
+  startIntegrationWatchdog();
+  /**
+   * And renew the tokens before they lapse (0205, doc 49 P10-B). Only the three
+   * connectors with a refresh grant; the other sixteen take a credential that
+   * does not expire and this sweep never sees them.
+   */
+  startCrmTokenRefresh();
   // The marketing funnel's own outbox - rejection messages and follow-ups.
   //
   // THIS WAS IMPORTED AND NEVER CALLED. Every WhatsApp message the console

@@ -107,12 +107,27 @@ const UpdateIntegrationBody = z.object({
  * Never return auth_secret - only whether one is set. `config` IS returned:
  * it holds hosts and ids the operator needs to see, which is exactly why
  * credentials must not be put there.
+ *
+ * ── AND NEVER refresh_secret, WHICH IS WORSE (0205) ─────────────────────────
+ *
+ * A refresh token mints access tokens and does not expire, so returning one is
+ * strictly more dangerous than returning the access token it replaces. Same
+ * treatment: presence only.
+ *
+ * What IS returned is the refresh STATE, because the console has to be able to
+ * answer "why is this connector failing" without anybody reading a log:
+ * when the token expires, when it was last renewed, and whether a refresh was
+ * refused in a way that needs the customer to reconnect. Those four are facts
+ * about the connection, not credentials - and `crm-secret-exposure.spec.ts`
+ * holds the line between the two.
  */
 const SAFE_COLUMNS = `id, workspace_id, provider, label, target, endpoint, method,
   auth_type, auth_header, auth_prefix,
   (auth_secret IS NOT NULL) AS has_auth_secret, headers, config, body_template,
   id_path, pair_keys, field_map, max_attempts, rate_limit_per_min, status,
-  only_qualified, last_success_at, last_error, created_at, updated_at`;
+  only_qualified, last_success_at, last_error, created_at, updated_at,
+  (refresh_secret IS NOT NULL) AS has_refresh_secret,
+  token_expires_at, token_refreshed_at, token_refresh_error, failing_since`;
 
 /**
  * CRM configuration (§2.3).

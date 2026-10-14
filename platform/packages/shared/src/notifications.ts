@@ -51,6 +51,17 @@ export const NotificationKind = z.enum([
    */
   "channel_needs_attention",
   /**
+   * A CRM connector has stopped accepting our deliveries (migration 0204).
+   *
+   * Almost always an expired OAuth access token on one of the four connectors
+   * that take one - Salesforce, Zoho, monday, Dynamics 365 - where the others
+   * use a long-lived API key and never lapse. Nothing is LOST when it happens:
+   * the outbox queues and retries, and `crm_sync_log` records every attempt.
+   * What was missing is anybody being told, so the first signal was a customer
+   * asking why their CRM was three weeks behind.
+   */
+  "integration_needs_attention",
+  /**
    * A lead has waited longer than the org's response SLA for a first response
    * (migration 0109, the worker's sla-breach sweep). Told to the assigned
    * telecaller's user and to owners/managers, once per lead.

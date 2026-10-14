@@ -19,6 +19,7 @@ import {
   createPlatformOrder,
   resolvePlatformGateway,
 } from "../billing/platform-razorpay";
+import { assertSignupsOpen, signupReadiness } from "./signup-readiness";
 import { SignupService } from "./signup.service";
 
 /**
@@ -81,6 +82,32 @@ export class PublicSignupController {
   ) {}
 
   /**
+   * Refuse a new purchase unless the shop is open AND the product works.
+   *
+   * The ASR read is on the admin pool and narrowed to one tiny platform table
+   * (0202), so it costs a round trip on a route that is already making several
+   * - and it is wrapped: a failure reads as "unknown", which ALLOWS. The
+   * switch is the control; this is the safety catch behind it, and a safety
+   * catch that closes the shop over a blip on a bookkeeping query would be
+   * worse than the thing it guards against.
+   */
+  private async assertOpen(): Promise<void> {
+    let asrUsable: boolean | null = null;
+    try {
+      const { rows } = await this.db.adminPool().query<{ usable: boolean }>(
+        `SELECT bool_or(parked_until IS NULL OR parked_until <= now()) AS usable
+           FROM asr_provider_health`,
+      );
+      // No rows at all means 0202 has not been applied - genuinely unknown, not
+      // "unusable", so it allows and the switch alone decides.
+      asrUsable = rows[0]?.usable ?? null;
+    } catch {
+      asrUsable = null;
+    }
+    assertSignupsOpen(signupReadiness(asrUsable));
+  }
+
+  /**
    * The priced catalogue a stranger may buy from.
    *
    * Prices come from `CAPTURE_PLANS`, not `plan_prices`, because that is what
@@ -122,6 +149,20 @@ export class PublicSignupController {
    */
   @Post("checkout")
   async checkout(@Body() body: unknown) {
+    // ── IS THE SHOP OPEN, AND CAN THE PRODUCT DO ITS JOB? ──────────────────
+    //
+    // Checked FIRST, before the body is even parsed: a 503 for a closed shop
+    // should not depend on sending a well-formed order, and nothing below this
+    // line should run for a purchase that is not going to be allowed.
+    //
+    // Two conditions (see signup-readiness.ts): an explicit
+    // PUBLIC_SIGNUPS_ENABLED, and at least one usable ASR provider. The second
+    // is doc 49 P9's own precondition made mechanical - selling a
+    // transcription product while no provider is usable is how a stranger's
+    // first week becomes a refund and a review. It is re-checked per request
+    // rather than at boot, because a vendor account empties at 2am.
+    await this.assertOpen();
+
     const parsed = CheckoutBody.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const p = parsed.data;

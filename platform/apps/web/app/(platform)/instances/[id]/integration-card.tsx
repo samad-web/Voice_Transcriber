@@ -188,7 +188,33 @@ export function IntegrationCard({
             Last ok <LocalTime iso={integration.last_success_at} />
           </span>
         ) : null}
+        {/*
+          ── THE CREDENTIAL EXPIRES (doc 49 P10-A) ──────────────────────────
+          Four of nineteen connectors take an OAuth ACCESS token rather than a
+          long-lived API key, and for Zoho and Dynamics it lapses in an hour.
+          Deliveries then 401 until a human pastes a new one. The catalogue has
+          always said so in the secret's help text - which is read once, while
+          somebody is typing the credential, the one moment they are least
+          worried about next Tuesday. On the card it is visible on the day it
+          matters.
+        */}
+        {provider?.credentialExpires ? (
+          <StatusChip tone="muted">
+            <AlertTriangle aria-hidden="true" className="h-2.5 w-2.5" /> pilot · token expires
+          </StatusChip>
+        ) : null}
       </div>
+
+      {provider?.credentialExpires ? (
+        <p className="rounded-md border border-border bg-surface-subtle p-2.5 text-xs text-text-muted">
+          <span className="font-medium text-text">
+            This connector&apos;s credential expires {provider.credentialExpires.within}.
+          </span>{" "}
+          {provider.credentialExpires.action} Deliveries queue and retry rather than being lost, so
+          a lapsed token costs latency and not data - but nothing will reach{" "}
+          {provider.label} until it is replaced.
+        </p>
+      ) : null}
 
       {integration.last_error ? (
         <p className="flex items-start gap-2 rounded-md border border-danger bg-danger-subtle p-2.5 text-sm font-medium text-danger-text">
