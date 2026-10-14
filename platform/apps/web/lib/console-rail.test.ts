@@ -387,10 +387,17 @@ describe("ownerTabsFor on the operator rail", () => {
     expect(tabs("/operators")).toBeNull();
   });
 
-  it("gives Clients the two pages that really do span tenants", () => {
-    // Was four. Configuration and Usage were both single-tenant screens reached
-    // with `?org=` and moved under /instances/<id> in Part B; what is left is the
-    // client list and what each client is provisioned for.
-    expect(tabs("/instances")?.tabs.map((t) => t.href)).toEqual(["/instances", "/provisioning"]);
+  it("gives Clients the three pages that really do span tenants", () => {
+    // Was four, then two. Configuration and Usage were both single-tenant
+    // screens reached with `?org=` and moved under /instances/<id> in Part B.
+    // Adoption joined in doc 49 P11 and belongs here for the same reason the
+    // other two do: it reads every tenant at once. It sits beside Provisioning
+    // deliberately - that page is what each client was SOLD, this one is what
+    // they have USED, and the console had only ever shown the first.
+    expect(tabs("/instances")?.tabs.map((t) => t.href)).toEqual([
+      "/instances",
+      "/provisioning",
+      "/adoption",
+    ]);
   });
 });

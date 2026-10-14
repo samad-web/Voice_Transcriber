@@ -13,7 +13,14 @@ import {
 } from "@nestjs/common";
 import { z } from "zod";
 import { PIPELINE_QUEUE, queueDepth } from "@aura/queue";
-import { OrgModule, WhatsAppProvider } from "@aura/shared";
+import {
+  ADOPTION_WINDOW_DAYS,
+  adoptionState,
+  MODULE_ADOPTION_PROBES,
+  type ModuleAdoption,
+  OrgModule,
+  WhatsAppProvider,
+} from "@aura/shared";
 import {
   provisionTenant,
   seedBoardDefaults,
@@ -302,6 +309,120 @@ export class AdminController {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * MODULE ADOPTION: WHAT WAS SOLD AGAINST WHAT IS USED (doc 49 P11).
+   *
+   * ── WHY THIS SCREEN IS WORTH HAVING EVEN THOUGH IT READS BADLY ────────────
+   *
+   * The operator console has only ever shown `enabled_modules` - a
+   * provisioning decision, made once, by us. It cannot say whether anything
+   * was used, and on 2026-10-14 the whole production estate had five distinct
+   * modules live across four tenants against 56 API modules: attendance, org
+   * chart, dialer, number vault, agent studio, report builder, the export
+   * engine, escalations and offboarding had no production user at all.
+   *
+   * Doc 49 predicts this will be uncomfortable reading and says that is the
+   * point. A module sold and never opened is either churn in progress or an
+   * onboarding that skipped it, and both are worth a conversation that nobody
+   * can start without the number.
+   *
+   * ── THE QUERY IS ASSEMBLED, AND FROM CONSTANTS ONLY ──────────────────────
+   *
+   * One UNION branch per probe in `MODULE_ADOPTION_PROBES`, because the
+   * evidence lives in a different table per module and there is no single
+   * place to look. Every table name, column and predicate comes from that
+   * frozen array - nothing here is built from a request - and
+   * `module-adoption.test.ts` asserts the array contains no interpolation.
+   * Assembling SQL from input would be the one unforgivable thing on a
+   * cross-tenant operator route.
+   */
+  @Get("module-adoption")
+  async moduleAdoption() {
+    const admin = this.db.adminPool();
+
+    const branches = MODULE_ADOPTION_PROBES.map(
+      (probe) => `
+        SELECT o.id AS org_id,
+               '${probe.module}'::text AS module,
+               max(e.${probe.column}) AS last_used_at,
+               count(*) FILTER (
+                 WHERE e.${probe.column} > now() - make_interval(days => $1)
+               )::int AS uses_in_window
+          FROM organizations o
+          LEFT JOIN ${probe.table} e
+            ON e.org_id = o.id${probe.where ? ` AND ${probe.where}` : ""}
+         GROUP BY o.id`,
+    ).join("\n UNION ALL \n");
+
+    const { rows } = await admin.query<{
+      org_id: string;
+      org_name: string;
+      status: string;
+      enabled_modules: string[] | null;
+      module: string;
+      last_used_at: Date | null;
+      uses_in_window: number;
+    }>(
+      `WITH evidence AS (${branches})
+       SELECT e.org_id, o.name AS org_name, o.status, o.enabled_modules,
+              e.module, e.last_used_at, e.uses_in_window
+         FROM evidence e
+         JOIN organizations o ON o.id = e.org_id
+        WHERE o.status <> 'deleted'
+        ORDER BY o.name, e.module`,
+      [ADOPTION_WINDOW_DAYS],
+    );
+
+    // Folded per tenant here rather than in SQL: the shape the console wants is
+    // one row per tenant with a module map, and a jsonb_object_agg would make
+    // the query harder to read for no gain on four tenants.
+    const byOrg = new Map<
+      string,
+      { orgId: string; orgName: string; status: string; modules: ModuleAdoption[] }
+    >();
+    for (const row of rows) {
+      let entry = byOrg.get(row.org_id);
+      if (!entry) {
+        entry = {
+          orgId: row.org_id,
+          orgName: row.org_name,
+          status: row.status,
+          modules: [],
+        };
+        byOrg.set(row.org_id, entry);
+      }
+      const enabled = (row.enabled_modules ?? []).includes(row.module);
+      const lastUsedAt = row.last_used_at ? new Date(row.last_used_at).toISOString() : null;
+      entry.modules.push({
+        module: row.module as ModuleAdoption["module"],
+        enabled,
+        lastUsedAt,
+        usedInWindow: row.uses_in_window > 0,
+        usesInWindow: row.uses_in_window,
+      });
+    }
+
+    const tenants = [...byOrg.values()].map((t) => ({
+      ...t,
+      // The state is computed from one function shared with the console, so the
+      // API and the screen cannot disagree about what 'dormant' means.
+      modules: t.modules.map((m) => ({ ...m, state: adoptionState(m) })),
+    }));
+
+    return {
+      windowDays: ADOPTION_WINDOW_DAYS,
+      // Shipped with the data so the console can render WHAT WAS MEASURED
+      // beside every date. A column reading "never used" is a claim, and a
+      // claim whose method is invisible gets argued with rather than acted on.
+      probes: MODULE_ADOPTION_PROBES.map((p) => ({
+        module: p.module,
+        evidence: p.evidence,
+        caveat: p.caveat ?? null,
+      })),
+      tenants,
+    };
   }
 
   @Get("tenants")

@@ -196,3 +196,10 @@ export * from "./ingest-schemas";
  * the file header for why that is not the Sentry SDK.
  */
 export * from "./observability";
+
+/**
+ * Module ADOPTION, as distinct from module provisioning (doc 49 P11). What a
+ * tenant was sold is `enabled_modules`; what they have used is this, and the
+ * two had never been shown side by side.
+ */
+export * from "./module-adoption";

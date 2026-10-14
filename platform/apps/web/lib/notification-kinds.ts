@@ -178,6 +178,16 @@ export const NOTIFICATION_KINDS: Record<NotificationKind, NotificationKindSpec> 
     icon: "plug",
     needsAction: true,
   },
+  // 0204/0205: a CRM connector is refusing our deliveries, almost always an
+  // expired OAuth token. `needsAction` because nothing resumes by itself - the
+  // outbox keeps the data safe and keeps retrying, but only a new credential
+  // makes a delivery land.
+  integration_needs_attention: {
+    label: "Integration problem",
+    description: "A CRM connector has stopped accepting deliveries.",
+    icon: "plug",
+    needsAction: true,
+  },
   // Attendance (doc 33, migration 0140). A request and a stretch to review
   // both wait on a decision; an overrun break and an unanswered presence
   // check are things to know, and the person deciding what they meant does it

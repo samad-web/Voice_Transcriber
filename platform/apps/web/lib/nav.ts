@@ -129,6 +129,17 @@ export const NAV_ITEMS: NavItem[] = [
     title: "Provisioning",
     context: "Platform",
   },
+  // Beside Provisioning deliberately: that page is what each client was SOLD,
+  // this one is what they have USED. Doc 49 P11 - the console had only ever
+  // shown the first, which on 2026-10-14 meant five live modules across four
+  // tenants against 56 API modules, and nothing on any screen said so.
+  {
+    href: "/adoption",
+    label: "Adoption",
+    icon: Gauge,
+    title: "Module adoption",
+    context: "Platform",
+  },
   // One client's team, roles and API keys. These were three top-level entries
   // under an "Access" heading, which said they were platform entities; all three
   // are per-org rows behind RLS. See app/(platform)/client-config/page.tsx.
@@ -2014,6 +2025,10 @@ const PLATFORM_SECTION_OF: Record<string, PlatformNavSection> = {
   // is provisioned for. Both span tenants, which is exactly what the ten pages
   // removed from this map did NOT do.
   "/provisioning": "clients",
+  // Same section as Provisioning: sold and used are two readings of one fact,
+  // and separating them into different parts of the rail would be the same
+  // mistake the console already made by showing only the first.
+  "/adoption": "clients",
 
   // Filed explicitly, not left to the fallback. Superadmins is the ONLY member
   // of this section, and an unfiled page silently joins the last group - so with
