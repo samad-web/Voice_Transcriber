@@ -5,6 +5,22 @@ graphify-out/
 # Claude Code machine-local settings (permissions etc.) — never commit
 .claude/settings.local.json
 
+# Environment files anywhere in the tree, including the repo ROOT.
+#
+# platform/.gitignore already covers the ones under platform/, but it cannot
+# cover a `.env` dropped at the top level — and that is exactly where a guide,
+# a tutorial or an AI assistant tells you to put one ("create a .env file in
+# your project root"). THIS REPO IS PUBLIC. An untracked-but-not-ignored .env
+# is one `git add -A` away from publishing a live gateway secret, which is the
+# same trap the service-account rule below exists to close; google-services.json
+# reached a commit that way on 2026-09-16.
+#
+# The negations keep the committed templates, which hold names and no values.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
 # Google service-account key files. They land in the repo root because that is
 # where a browser download gets dragged, and they are untracked-but-not-ignored
 # by default, which means `git add -A` commits a live private key. The name is
