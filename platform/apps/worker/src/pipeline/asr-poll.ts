@@ -1,5 +1,6 @@
 import { getAdminPool, withOrgContext } from "@aura/db";
 import { publishAnalyze } from "@aura/queue";
+import { recordProviderSuccess } from "./asr-route";
 import { collectSarvamAsrJob, sarvamAsrConfigured } from "./asr-sarvam";
 import { persistTranscript, priorAttempts, stageHelpers } from "./pipeline";
 
@@ -164,8 +165,12 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
       const helpers = stageHelpers(client, row.id, attempts, row.org_id);
       try {
         await persistTranscript(client, row.org_id, row.id, outcome.result);
+        // A transcript collected is the strongest evidence a provider works,
+        // so it clears any park (0202). The write is best-effort inside
+        // recordProviderSuccess and cannot fail the transcript it is reporting.
+        await recordProviderSuccess(client, "sarvam");
       } catch (err) {
-        await helpers.fail("ASR", err);
+        await helpers.fail("ASR", err, { provider: "sarvam" });
         return;
       }
       console.log(
@@ -207,13 +212,23 @@ export async function pollAsrJobs(limit = 100): Promise<number> {
   return finished;
 }
 
-/** Record a job-level failure through the same budget as an inline ASR error. */
+/**
+ * Record a job-level failure through the same budget as an inline ASR error.
+ *
+ * The provider is named, which is what lets `fail()` park Sarvam rather than
+ * spend this call's attempts when the failure is the vendor's (P1-A). The
+ * collect half matters as much as the submit half: a job accepted by a funded
+ * account can still come back refused when the account empties mid-flight, and
+ * that is the same incident wearing a later timestamp.
+ */
 async function failCall(row: PendingJob, err: Error): Promise<void> {
   await withOrgContext(row.org_id, async (client) => {
     const claim = await client.query(CLAIM_SQL, [row.id, row.asr_job_id]);
     if ((claim.rowCount ?? 0) === 0) return;
     const attempts = await priorAttempts(client, row.id);
-    await stageHelpers(client, row.id, attempts, row.org_id).fail("ASR", err);
+    await stageHelpers(client, row.id, attempts, row.org_id).fail("ASR", err, {
+      provider: "sarvam",
+    });
   });
 }
 

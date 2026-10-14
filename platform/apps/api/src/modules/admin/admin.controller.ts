@@ -431,9 +431,82 @@ export class AdminController {
 
     const depth = await queueDepth();
 
+    /**
+     * THE NUMBER WHOSE ABSENCE COST 62 DAYS.
+     *
+     * Every one of the eight stage rows above was green throughout the
+     * 2026-08-13 → 2026-10-14 outage, and so was `GET /health`. They measure
+     * process liveness: is a stage holding anything, is anything stuck. The
+     * pipeline was not stuck. It was running perfectly and failing 96% of the
+     * work, because the vendor it was handing audio to had no credit.
+     *
+     * So the health endpoint now carries the BUSINESS ratio as well as the
+     * process one. NO_AUDIO is excluded deliberately - those are the
+     * call-log-only rows from missed-call capture (0133/0134), which never had
+     * audio to transcribe, and leaving them in flatters the number by exactly
+     * the amount nobody wants flattered.
+     */
+    const {
+      rows: [rate],
+    } = await admin.query<{ total: string; complete: string }>(
+      `SELECT count(*)::text AS total,
+              count(*) FILTER (WHERE status = 'COMPLETE')::text AS complete
+         FROM calls
+        WHERE created_at > now() - interval '24 hours'
+          AND status <> 'NO_AUDIO'`,
+    );
+    const audioBearing = Number(rate?.total ?? 0);
+    const complete = Number(rate?.complete ?? 0);
+
+    /**
+     * And which VENDOR is refusing us, by name (0202).
+     *
+     * `parked_until` in the future means the router is skipping that provider.
+     * A deployment where every configured provider is parked transcribes
+     * nothing, which is the one condition this endpoint most needs to be able
+     * to state out loud.
+     */
+    const { rows: providers } = await admin.query<{
+      provider: string;
+      parked_until: Date | null;
+      last_reason: string | null;
+      last_error_at: Date | null;
+      last_success_at: Date | null;
+      park_count: number;
+    }>(
+      `SELECT provider, parked_until, last_reason, last_error_at, last_success_at, park_count
+         FROM asr_provider_health
+        ORDER BY provider`,
+    );
+    const nowMs = Date.now();
+    const asr = providers.map((p) => ({
+      provider: p.provider,
+      parked: p.parked_until !== null && new Date(p.parked_until).getTime() > nowMs,
+      parkedUntil: p.parked_until,
+      reason: p.last_reason,
+      lastErrorAt: p.last_error_at,
+      lastSuccessAt: p.last_success_at,
+      parkCount: Number(p.park_count ?? 0),
+    }));
+
     return {
       stages,
       queue: { name: PIPELINE_QUEUE, depth, reachable: depth !== null },
+      /**
+       * Audio-bearing calls only, last 24h. `null` when there were none - an
+       * honest "nothing to measure" rather than a 0% that reads as an outage,
+       * or a 100% that reads as health. The zero-ingest alert is what covers
+       * the silence case, and it is a different alert on purpose.
+       */
+      transcription: {
+        windowHours: 24,
+        audioBearingCalls: audioBearing,
+        complete,
+        successRate: audioBearing > 0 ? complete / audioBearing : null,
+      },
+      asr,
+      /** Nothing will transcribe at all while this is true. */
+      asrUsable: asr.length === 0 ? null : asr.some((p) => !p.parked),
       awaitingAudio: countOf("AWAITING_AUDIO"),
       // Not folded into `stages`: STUCK_AFTER_MS (10 min) is calibrated to a
       // pipeline run, not to a handset's upload, which can legitimately take

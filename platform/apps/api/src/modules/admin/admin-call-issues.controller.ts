@@ -97,7 +97,20 @@ const QUEUE_COLUMNS = `r.id, r.ref, r.org_id, o.name AS org_name, r.call_id,
        r.resolution, r.resolved_at, r.resolved_by_email, r.client_confirmed_at,
        r.reprocess_count, r.last_reprocess_at, r.duplicate_of,
        r.snap_call_status, r.snap_call_started_at, r.snap_duration_s, r.snap_direction,
-       o.call_access_gate_enabled`;
+       o.call_access_gate_enabled,
+       -- ── THE SYSTEM-TICKET COLUMNS (0201) ────────────────────────────────
+       --
+       -- Without these three the board renders a 2,792-occurrence outage as one
+       -- ordinary ticket - which is the burial this queue was extended to
+       -- prevent, achieved by leaving the row unread instead of unwritten.
+       --
+       -- source says nobody reported it, we noticed. platform_reason is the
+       -- vendor-level cause the queue groups on. occurrence_count with
+       -- last_occurred_at is the difference between a vendor hiccup and
+       -- nothing having worked since August, and the pair is what tells an
+       -- operator whether a live incident is still happening or quietly healed
+       -- itself three days ago.
+       r.source, r.platform_reason, r.occurrence_count, r.last_occurred_at`;
 
 /**
  * The escalation queue: every tenant's reported call problems, in one place
@@ -201,6 +214,15 @@ export class AdminCallIssuesController {
               count(*) FILTER (WHERE resolved_at > now() - interval '7 days')::int AS resolved_7d,
               count(*) FILTER (WHERE resolution = 'reprocessed'
                                AND resolved_at > now() - interval '30 days')::int AS reprocessed_30d,
+              -- Platform incidents the system raised itself, and the calls they
+              -- stand for. One tile reading "1 incident · 2,792 calls" is the
+              -- whole of a vendor outage at a glance; the ticket count alone
+              -- would read as "one minor thing", which is exactly how 62 days
+              -- of total failure managed to look like nothing.
+              count(*) FILTER (WHERE source = 'system'
+                               AND status = ANY($1::text[]))::int AS live_platform_incidents,
+              coalesce(sum(occurrence_count) FILTER (WHERE source = 'system'
+                               AND status = ANY($1::text[])), 0)::int AS live_platform_occurrences,
               -- The oldest thing nobody has acknowledged, in hours. The tile this
               -- feeds is the one that should make somebody open the queue.
               round(EXTRACT(EPOCH FROM (now() - min(reported_at) FILTER (WHERE status = 'open'))) / 3600)::int

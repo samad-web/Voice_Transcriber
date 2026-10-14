@@ -58,7 +58,7 @@ vi.mock("@aura/db", () => ({
         if (/SELECT pipeline_attempts/.test(text)) {
           return { rows: [{ pipeline_attempts: 1 }], rowCount: 1 };
         }
-        if (/pipeline_attempts = pipeline_attempts \+ 1/.test(text)) {
+        if (/UPDATE calls\s+SET status = \$2,[\s\S]*error_message = \$3/.test(text)) {
           return { rows: [{ pipeline_attempts: 2 }], rowCount: 1 };
         }
         return { rows: [], rowCount: 0 };
@@ -97,7 +97,7 @@ function stalledRow(status: string, minutesAgo = 90) {
 
 /** The `fail()` write, if one happened. */
 function failure(): Recorded | undefined {
-  return issued.find((q) => /pipeline_attempts = pipeline_attempts \+ 1/.test(q.text));
+  return issued.find((q) => /UPDATE calls\s+SET status = \$2,[\s\S]*error_message = \$3/.test(q.text));
 }
 
 /** The AWAITING_AUDIO -> FAILED_UPLOAD write, if one happened. */
@@ -155,8 +155,10 @@ describe("failStalledCalls", () => {
     // FAILED_% + a due next_attempt_at is exactly the shape that sweep claims.
     expect(String(failed.values[1]).startsWith("FAILED_")).toBe(true);
     // Counted, so a call that strands over and over retires to a human instead
-    // of looping between the two sweeps forever.
-    expect(failed.text).toMatch(/pipeline_attempts = pipeline_attempts \+ 1/);
+    // of looping between the two sweeps forever. $8 is the flag P1-A added for
+    // the one case that must NOT be counted - a vendor refusing us - and a
+    // stalled call is not that case.
+    expect(failed.values[7]).toBe(true);
   });
 
   it("records why, naming the state and how long it sat there", async () => {

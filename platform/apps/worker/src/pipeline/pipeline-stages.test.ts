@@ -57,7 +57,7 @@ function fakeClient() {
         };
       }
       // fail() - returns the attempt it just recorded.
-      if (/pipeline_attempts = pipeline_attempts \+ 1/.test(text)) {
+      if (/UPDATE calls\s+SET status = \$2,[\s\S]*error_message = \$3/.test(text)) {
         return { rows: [{ pipeline_attempts: 1 }], rowCount: 1 };
       }
       // advance() - the optimistic transition, which wins unless a test is
@@ -105,7 +105,7 @@ function transitions(): Array<[string, string]> {
 
 /** The single `fail()` write, if one happened. */
 function failure(): Recorded | undefined {
-  return issued.find((q) => /pipeline_attempts = pipeline_attempts \+ 1/.test(q.text));
+  return issued.find((q) => /UPDATE calls\s+SET status = \$2,[\s\S]*error_message = \$3/.test(q.text));
 }
 
 beforeEach(() => {
@@ -165,7 +165,13 @@ describe("processCall - transcode failure", () => {
     expect(failed.text).toMatch(/next_attempt_at = CASE/);
     // Attempt counted, and any stale batch-ASR job dropped - a retry submits
     // its own, and the poller must not be left holding the old id.
-    expect(failed.text).toMatch(/pipeline_attempts = pipeline_attempts \+ 1/);
+    //
+    // The count is now CONDITIONAL in SQL (`+ CASE WHEN $8 ...`) because P1-A
+    // lets a provider-level failure decline to spend the call's budget, so the
+    // assertion is on the flag rather than on the arithmetic: $8 true means
+    // this failure was charged to the call, which is right for an ffmpeg crash.
+    expect(failed.values[7]).toBe(true);
+    expect(failed.text).toMatch(/pipeline_attempts = pipeline_attempts \+ CASE WHEN \$8/);
     expect(failed.text).toMatch(/asr_job_id = NULL/);
   });
 

@@ -173,6 +173,7 @@ vi.mock("./projects", () => ({ detectCallProjects: vi.fn(async () => {}) }));
 
 import { enrichCall } from "./enrich";
 import { orgStageHelpers, processCall, runPostAsrStages } from "./pipeline";
+import { resetProviderHealthCache } from "./asr-route";
 
 const INTEL = {
   turns: [],
@@ -199,6 +200,14 @@ beforeEach(() => {
   openDuringProvider = 0;
   sarvamConfigured = true;
   orgSettings = {};
+  // The ASR stage routes on provider HEALTH now (0202, doc 49 P1-A), and a
+  // provider with no key is not a provider: without this the inline path is
+  // unreachable, because the router correctly refuses to pick an unconfigured
+  // Gemini. The inline path IS Gemini, so a key is its honest precondition.
+  vi.stubEnv("GEMINI_API_KEY", "sk-gemini-test");
+  vi.stubEnv("ASR_STUB", "");
+  vi.stubEnv("ASR_HEALTH_CACHE_MS", "0");
+  resetProviderHealthCache();
   analyzeConversation.mockImplementation(async () => {
     sampleInsideProvider();
     return INTEL;
@@ -274,6 +283,10 @@ describe("the ASR stage", () => {
   it("holds no transaction while an inline provider transcribes", async () => {
     // The inline path is the one that used to hold a connection for the whole
     // of transcription, since it never returns early the way the batch path does.
+    //
+    // "Sarvam not configured" is still what selects it: an unconfigured
+    // provider is skipped by the router exactly as a parked one is, which is
+    // the point of 0202 - the two were indistinguishable for 62 days.
     sarvamConfigured = false;
 
     await processCall({ callId: CALL_ID, orgId: ORG_ID });

@@ -329,6 +329,14 @@ export interface OwnerCall {
   started_at: string;
   duration_s: number;
   status: string;
+  /**
+   * Whose fault the failure was (0201), or null on a call that has not failed.
+   * The status says which STAGE stopped; this says whether it was ours, the
+   * recording's, or a setting of theirs - and `pipelineStage` needs both to
+   * write a true sentence. Carries no vendor detail: `error_message` and
+   * `failure_reason_code` are the operator's and stay out of this shape.
+   */
+  failure_class: "platform" | "content" | "config" | null;
   remote_name: string | null;
   remote_number_prefix: string | null;
   remote_number_last3: string | null;

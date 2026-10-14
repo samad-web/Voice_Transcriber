@@ -36,9 +36,47 @@ export const CallIssueCategory = z.enum([
   "wrong_facts",
   "wrong_disposition",
   "missing_call",
+  /**
+   * The one category a client never picks. Every other member describes a
+   * transcript that came out WRONG; this one describes a transcript that never
+   * came out at all, because a stage of our pipeline failed in a way that was
+   * ours (migration 0201). Filed by the system, not by a person - see
+   * `CALL_ISSUE_CATEGORIES.processing_failed.client`, which is phrased as
+   * something we are telling them rather than something they are telling us.
+   */
+  "processing_failed",
   "other",
 ]);
 export type CallIssueCategory = z.infer<typeof CallIssueCategory>;
+
+/**
+ * Who filed a report. `client` is 0147's original and only path: a person sees
+ * a bad transcript and says so. `system` is 0201: the pipeline classified a
+ * failure as ours and raised the ticket itself, because the alternative -
+ * waiting for a client to notice - is how one empty vendor wallet went
+ * unreported for 62 days.
+ */
+export const CallIssueSource = z.enum(["client", "system"]);
+export type CallIssueSource = z.infer<typeof CallIssueSource>;
+
+/**
+ * The reporter's persona, snapshotted on the row. `system` is not a persona
+ * anybody holds; it is how a report with no author names that fact, rather
+ * than leaving a NULL for every join to special-case or borrowing some owner's
+ * name for a ticket they did not file.
+ */
+export const CallIssueReporterRole = z.enum([
+  "owner",
+  "manager",
+  "telecaller",
+  "sales",
+  "marketing",
+  "system",
+]);
+export type CallIssueReporterRole = z.infer<typeof CallIssueReporterRole>;
+
+/** The name stored on a system-filed report. One spelling, in one place. */
+export const SYSTEM_REPORTER_NAME = "Automatic monitoring";
 
 /**
  * How much it is costing them. Three values, and deliberately not a number: a
@@ -118,6 +156,15 @@ export const CallIssueEventKind = z.enum([
   "withdrawn",
   "client_reply",
   "client_confirmed",
+  /** 0201: the system opened this ticket after classifying a failure as ours. */
+  "system_opened",
+  /**
+   * 0201: another call hit the same platform failure, so it was folded into
+   * this ticket instead of opening a new one. ALWAYS `internal` - a client does
+   * not need a timeline entry per failed call, and `occurrence_count` is what
+   * the operator reads anyway.
+   */
+  "system_recurrence",
 ]);
 export type CallIssueEventKind = z.infer<typeof CallIssueEventKind>;
 
@@ -188,12 +235,39 @@ export const CALL_ISSUE_CATEGORIES: Record<
     operator: "Call missing from the log",
     needsRecording: false,
   },
+  /**
+   * 0201, and the only entry here whose `client` string is not a sentence the
+   * client could have written. The reporting dialog must not offer it -
+   * `CLIENT_REPORTABLE_CATEGORIES` below is what the dialog iterates - because
+   * a client cannot diagnose whose fault a failure was, which is exactly why
+   * the system files this one for them.
+   */
+  processing_failed: {
+    client: "We could not finish processing this call",
+    operator: "Processing failed (ours)",
+    needsRecording: false,
+  },
   other: {
     client: "Something else",
     operator: "Other",
     needsRecording: false,
   },
 };
+
+/**
+ * What the client's reporting dialog may offer.
+ *
+ * Derived by subtraction rather than listed, so adding a category defaults it
+ * to client-reportable and a new SYSTEM category has to be excluded here
+ * deliberately. That is the right default: forgetting to add a real complaint
+ * to the dialog is a feature gap somebody notices, while accidentally offering
+ * a client "we could not finish processing this call" as something they are
+ * telling us is a nonsense they cannot unsee.
+ */
+export const SYSTEM_ONLY_CATEGORIES: readonly CallIssueCategory[] = ["processing_failed"];
+
+export const CLIENT_REPORTABLE_CATEGORIES: readonly CallIssueCategory[] =
+  CallIssueCategory.options.filter((c) => !SYSTEM_ONLY_CATEGORIES.includes(c));
 
 export const CALL_ISSUE_SEVERITIES: Record<CallIssueSeverity, { client: string; operator: string }> =
   {

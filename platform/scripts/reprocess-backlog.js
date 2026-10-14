@@ -17,6 +17,29 @@
  * recalled. Hence: a dry run that is the default posture, an explicit --yes, a
  * printed cost estimate, and a paced loop that does not stampede the queue.
  *
+ * ── THE FOUR REPLAY RULES (doc 49 P1-B) ────────────────────────────────────
+ *
+ * 2,792 calls have audio in object storage and no transcript, because the ASR
+ * vendor returned HTTP 402 to every submission between 2026-08-13 and
+ * 2026-10-14. Replaying them is what closes that gap, and the plan's rules for
+ * doing it are enforced here rather than written down and hoped for:
+ *
+ *   1. RUN IT AFTER THE ROUTING FIX. Replaying into a parked vendor reproduces
+ *      the failure 2,792 more times. `--yes` now refuses to start unless
+ *      /v1/admin/health reports at least one usable ASR provider. Override with
+ *      --skip-health-check, which exists so the refusal can be argued with
+ *      rather than worked around silently.
+ *   2. OLDEST FIRST, so the customer-visible gap closes from the far end. This
+ *      is the default; --newest-first is there for a deliberate "fix today
+ *      before fixing August".
+ *   3. RATE-LIMITED. --pace-ms, as before, and it matters more now: a provider
+ *      being asked to absorb two months of backlog in an afternoon is how you
+ *      discover a quota you did not know you had.
+ *   4. PRICED BEFORE IT RUNS. The estimate below is printed on every run,
+ *      including the dry one. Deciding whether all 2,792 are worth it or only
+ *      the last 30 days is a business call - --since is how you express the
+ *      answer.
+ *
  * Env: reads API_BASE and ADMIN_API_KEY, or falls back to --api / --key flags.
  */
 const args = process.argv.slice(2);
@@ -31,6 +54,14 @@ const KEY = flag("key", process.env.ADMIN_API_KEY);
 const ORG = flag("org");
 const STATUSES = (flag("status", "FAILED_ANALYZE") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 const LIMIT = Number(flag("limit", "500"));
+/**
+ * Only calls that started on or after this date. The whole backlog and the
+ * last 30 days of it are different invoices, and which one to pay is not a
+ * decision this script should make for anybody.
+ */
+const SINCE = flag("since");
+/** Oldest first unless told otherwise - the gap closes from the far end. */
+const NEWEST_FIRST = has("newest-first");
 /** Seconds between submissions. The queue is fine with a burst; the ASR provider
  *  and the customer's webhook are the things worth being polite to. */
 const PACE_MS = Number(flag("pace-ms", "1500"));
@@ -39,7 +70,8 @@ const DRY = !has("yes");
 if (!API || !KEY || !ORG || STATUSES.length === 0) {
   console.error(
     "usage: node scripts/reprocess-backlog.js --org <uuid> --status A,B [--api URL] [--key KEY]\n" +
-      "                                        [--limit N] [--pace-ms N] [--yes]\n\n" +
+      "                                        [--limit N] [--pace-ms N] [--since YYYY-MM-DD]\n" +
+      "                                        [--newest-first] [--skip-health-check] [--yes]\n\n" +
       "Without --yes it lists what WOULD run and exits. API_BASE and ADMIN_API_KEY\n" +
       "can come from the environment instead of --api/--key.",
   );
@@ -59,6 +91,53 @@ async function listCalls(status) {
   return rows;
 }
 
+/**
+ * Is anything able to transcribe right now?
+ *
+ * This is rule 1, and it is the only check in this script that can refuse to
+ * run. The 2,792-call backlog exists because the pipeline could not tell
+ * "configured" from "usable"; replaying it into the same condition would turn
+ * one incident into two, with the second one's cost on our own invoice.
+ */
+async function assertAsrUsable() {
+  let health;
+  try {
+    const res = await fetch(`${API}/v1/admin/health`, { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    health = await res.json();
+  } catch (err) {
+    throw new Error(
+      `could not read ${API}/v1/admin/health (${err.message ?? err}). ` +
+        "Re-run with --skip-health-check if you have confirmed a provider works by hand.",
+    );
+  }
+
+  const asr = Array.isArray(health.asr) ? health.asr : [];
+  if (asr.length === 0) {
+    console.warn(
+      "  WARNING: this deployment reports no ASR provider health rows at all.\n" +
+        "  Migration 0202 may not be applied. Proceeding only because there is\n" +
+        "  nothing to contradict - watch the first ten calls.",
+    );
+    return;
+  }
+  for (const p of asr) {
+    console.log(
+      `  provider ${String(p.provider).padEnd(8)} ${p.parked ? `PARKED (${p.reason ?? "?"})` : "usable"}`,
+    );
+  }
+  if (asr.every((p) => p.parked)) {
+    throw new Error(
+      "every ASR provider is parked - a replay now would fail every call again.\n" +
+        "Top the vendor up, or set ASR_PROVIDER_ORDER to one that works, and try again.",
+    );
+  }
+  const rate = health.transcription?.successRate;
+  if (typeof rate === "number") {
+    console.log(`  last 24h success rate on audio-bearing calls: ${(rate * 100).toFixed(1)}%`);
+  }
+}
+
 async function main() {
   const groups = [];
   for (const status of STATUSES) {
@@ -66,7 +145,31 @@ async function main() {
     groups.push({ status, rows });
   }
 
+  if (SINCE) {
+    const cutoff = new Date(SINCE);
+    if (Number.isNaN(cutoff.getTime())) {
+      console.error(`--since ${SINCE} is not a date`);
+      process.exit(2);
+    }
+    for (const g of groups) {
+      g.rows = g.rows.filter((c) => {
+        const at = c.started_at ?? c.created_at;
+        return at ? new Date(at) >= cutoff : true;
+      });
+    }
+  }
+
   const all = groups.flatMap((g) => g.rows);
+  /**
+   * Rule 2. The API returns newest-first, which is the wrong end for this job:
+   * a customer looking at August wants August filled in, and the oldest calls
+   * are also the ones closest to their retention window expiring.
+   */
+  all.sort((a, b) => {
+    const at = new Date(a.started_at ?? a.created_at ?? 0).getTime();
+    const bt = new Date(b.started_at ?? b.created_at ?? 0).getTime();
+    return NEWEST_FIRST ? bt - at : at - bt;
+  });
   const seconds = all.reduce((s, c) => s + Number(c.duration_s || 0), 0);
   const hours = seconds / 3600;
 
@@ -88,10 +191,27 @@ async function main() {
       `${all.length} outbound deliveries\n`,
   );
 
+  if (all.length > 0) {
+    const first = all[0].started_at ?? all[0].created_at;
+    const last = all[all.length - 1].started_at ?? all[all.length - 1].created_at;
+    console.log(
+      `  order: ${NEWEST_FIRST ? "newest" : "oldest"} first ` +
+        `(${String(first).slice(0, 10)} → ${String(last).slice(0, 10)})`,
+    );
+  }
+
   if (DRY) {
-    console.log("DRY RUN - nothing submitted. Re-run with --yes to execute.\n");
+    console.log("\nDRY RUN - nothing submitted. Re-run with --yes to execute.\n");
     return;
   }
+
+  console.log("\nchecking that something can actually transcribe:");
+  if (has("skip-health-check")) {
+    console.warn("  --skip-health-check given; NOT verifying that an ASR provider is usable.");
+  } else {
+    await assertAsrUsable();
+  }
+  console.log("");
 
   let ok = 0;
   const failed = [];

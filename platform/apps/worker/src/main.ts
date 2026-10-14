@@ -6,7 +6,7 @@ import { WorkerModule } from "./worker.module";
 import { analyzeCall, processCall } from "./pipeline/pipeline";
 import { startAsrPoller } from "./pipeline/asr-poll";
 import { enrichCall, startEnrichmentSweep } from "./pipeline/enrich";
-import { sarvamAsrConfigured, sarvamAsrModel } from "./pipeline/asr-sarvam";
+import { asrBannerLine, preflightAsrProviders, startAsrPreflight } from "./pipeline/asr-preflight";
 import { startReaper } from "./pipeline/reaper";
 import { startStorageUsageSweep } from "./pipeline/storage-usage";
 import { startStorageEviction } from "./pipeline/storage-eviction";
@@ -136,6 +136,15 @@ async function bootstrap() {
   // calls parked in TRANSCRIBING and drives them once the job lands. A no-op
   // for inline providers, which never park anything.
   startAsrPoller();
+  /**
+   * ASK THE VENDORS WHETHER THEY WILL SERVE US (doc 49 P1-D).
+   *
+   * Every 15 minutes for the parked ones, daily for all of them. The short
+   * clock is what ends a park early: once a provider is parked nothing routes
+   * to it, so without a probe a six-hour park on an account topped up ten
+   * minutes later would keep the funded vendor idle for five hours and fifty.
+   */
+  startAsrPreflight();
   // The marketing funnel's own outbox - rejection messages and follow-ups.
   //
   // THIS WAS IMPORTED AND NEVER CALLED. Every WhatsApp message the console
@@ -420,12 +429,34 @@ async function bootstrap() {
   // now that each organisation brings its own Google app (0120).
   const sheets = startSheetsSync();
   const linkedin = startLinkedInSweep();
-  const asr = sarvamAsrConfigured()
-    ? `sarvam:${sarvamAsrModel()} batch`
-    : `gemini:${process.env.GEMINI_ASR_MODEL ?? "gemini-3.5-flash"} inline`;
+  /**
+   * THE BANNER THAT SHOULD HAVE CAUGHT P1 ON DAY ONE.
+   *
+   * This line used to read `sarvam:saaras:v3 batch`, derived from
+   * `sarvamAsrConfigured()` - key presence. It printed on every boot for 62
+   * days while nothing was transcribing, and every word of it was true. It now
+   * reports whether each provider is USABLE, so a parked vendor says so here.
+   *
+   * The probe runs BEFORE the banner and is awaited, which is the one place in
+   * this file where blocking the boot for a few seconds is worth it: a worker
+   * that starts up next to an empty vendor account should say so in its first
+   * line of output, not fifteen minutes later. It cannot fail the boot -
+   * preflightAsrProviders never throws - and a slow vendor is bounded by
+   * ASR_PREFLIGHT_TIMEOUT_MS.
+   */
+  const probes = await preflightAsrProviders().catch(() => []);
+  for (const probe of probes) {
+    if (!probe.ok) {
+      console.error(
+        `asr preflight: ${probe.provider} is NOT usable - ${probe.detail}` +
+          (probe.parkedForSeconds ? ` (parked for ${probe.parkedForSeconds}s)` : ""),
+      );
+    }
+  }
+  const asr = await asrBannerLine();
   console.log(
     `Aura worker consuming aura.pipeline x${process.env.PIPELINE_PREFETCH ?? 8} ` +
-      `(transcode → asr[${asr}]) + aura.analyze x${process.env.ANALYZE_PREFETCH ?? 8} ` +
+      `(transcode → ${asr}) + aura.analyze x${process.env.ANALYZE_PREFETCH ?? 8} ` +
       `(extract → lead) + aura.enrich x${process.env.ENRICH_PREFETCH ?? 4} ` +
       "(intelligence → crm) " +
       // The export lane says its own prefetch for the same reason the other

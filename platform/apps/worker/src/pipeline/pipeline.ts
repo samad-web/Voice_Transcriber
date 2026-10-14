@@ -2,10 +2,28 @@ import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getAdminPool, readEffectiveLimits, type PoolClient, withOrgContext } from "@aura/db";
 import { analyzeTranscript } from "@aura/llm";
 import { type PipelineMessage, publishEnrich } from "@aura/queue";
-import { ExtractionSchema, QUOTA_WARN_AT, readQuota } from "@aura/shared";
+import {
+  callIssueRef,
+  type ClassifiedFailure,
+  classifyFailure,
+  ExtractionSchema,
+  PLATFORM_REASON_SEVERITY,
+  type PlatformFailureReason,
+  QUOTA_WARN_AT,
+  readQuota,
+} from "@aura/shared";
 import { recordReprocessOutcome } from "./call-issue-followup";
+import { escalatePlatformFailure } from "./platform-escalation";
 import { type AsrResult, transcribe } from "./asr";
-import { sarvamAsrConfigured, startSarvamAsrJob } from "./asr-sarvam";
+import {
+  type AsrProvider,
+  chooseAsrProvider,
+  describeProvider,
+  parkDurationFor,
+  parkProvider,
+  recordProviderSuccess,
+} from "./asr-route";
+import { startSarvamAsrJob } from "./asr-sarvam";
 import { prepareAudioForAsr } from "./audio-prep";
 import { analyseDeadAirInBackground } from "./dead-air";
 import { projectLeadToCrm } from "./crm-objects";
@@ -95,11 +113,39 @@ function reasonOf(err: unknown): string {
   return text.length > 500 ? `${text.slice(0, 500)}…` : text;
 }
 
+export interface FailContext {
+  /**
+   * The ASR provider this stage was talking to, when it was talking to one.
+   *
+   * This is what lets `fail()` tell "the vendor refused us" from "this call
+   * went wrong": a failure with a provider attached and a vendor-level reason
+   * parks the VENDOR and does NOT spend the call's retry budget (doc 49 P1-A).
+   * Omit it and the failure behaves exactly as it always did.
+   */
+  provider?: AsrProvider;
+}
+
 export interface StageHelpers {
   /** Optimistic status transition; false means someone else already moved it. */
   advance(from: string, to: string): Promise<boolean>;
   /** Record the failure and schedule the next attempt (or give up). */
-  fail(stage: string, err: unknown): Promise<void>;
+  fail(stage: string, err: unknown, ctx?: FailContext): Promise<void>;
+  /**
+   * Record a failure that is a PROVIDER's and schedule a retry for `retryAt`,
+   * without spending one of the call's attempts.
+   *
+   * Used when no provider is usable at all - every one configured is parked -
+   * so the stage never ran and there is nothing about this call to retry
+   * differently. "All of our vendors are refusing us" is not a defect in this
+   * recording and must not consume the budget that exists to decide whether
+   * this recording is defective.
+   */
+  defer(
+    stage: string,
+    reason: PlatformFailureReason,
+    operatorDetail: string,
+    retryAt: Date,
+  ): Promise<void>;
 }
 
 /** Failures so far. Read up front so `fail` can name the attempt it is
@@ -159,18 +205,47 @@ export function stageHelpers(
    * the audio, so keeping the old job id would only give the poller a job it
    * must not act on.
    */
-  const fail = async (stage: string, err: unknown) => {
+  /**
+   * Record a failure, decide whether it spends an attempt, and schedule the
+   * retry. The one SQL statement both `fail` and `defer` go through.
+   *
+   * `spend = false` is doc 49 P1-A's central correction: a provider-level error
+   * must not consume the CALL's retry budget. For 62 days it did - a vendor
+   * with an empty wallet burned all five attempts of 2,792 calls on a
+   * 30s/2m/8m/32m backoff and landed every one of them in FAILED_ASR
+   * permanently. The retry budget exists to decide whether THIS RECORDING is
+   * the problem; a 402 from a vendor is not evidence about this recording.
+   *
+   * The status still becomes FAILED_* either way, which is the truth: the call
+   * really has not been transcribed right now. `next_attempt_at` is what
+   * distinguishes "we will try again shortly" from "this needs a person", and
+   * `failure_class = 'platform'` is what makes the console say "Processing
+   * delayed - nothing is wrong with the call or the recording" rather than
+   * blaming the customer's handset (migration 0201).
+   */
+  const record = async (
+    stage: string,
+    errText: string,
+    classified: ClassifiedFailure,
+    opts: { spend: boolean; retryAt: Date | null },
+  ): Promise<number> => {
     const {
       rows: [row],
     } = await client.query<{ pipeline_attempts: number }>(
       `UPDATE calls
           SET status = $2,
               error_message = $3,
-              pipeline_attempts = pipeline_attempts + 1,
+              failure_class = $6,
+              failure_reason_code = $7,
+              pipeline_attempts = pipeline_attempts + CASE WHEN $8 THEN 1 ELSE 0 END,
               asr_job_id = NULL,
               asr_job_started_at = NULL,
               next_attempt_at = CASE
-                WHEN pipeline_attempts + 1 < $4
+                -- An explicit retry time (a parked provider's expiry, or "now"
+                -- because another provider is usable) always wins: it is a
+                -- scheduling fact, not a backoff guess.
+                WHEN $9::timestamptz IS NOT NULL THEN $9::timestamptz
+                WHEN pipeline_attempts + CASE WHEN $8 THEN 1 ELSE 0 END < $4
                 THEN now() + make_interval(secs => $5)
                 ELSE NULL
               END
@@ -179,18 +254,138 @@ export function stageHelpers(
       [
         callId,
         `FAILED_${stage}`,
-        reasonOf(err),
+        errText,
         MAX_PIPELINE_ATTEMPTS,
         // Computed from the attempt this failure becomes, read before the
         // update inside the same statement - hence the +1 mirrored here.
         retryBackoffSeconds(attempts + 1),
+        classified.failureClass,
+        classified.reason,
+        opts.spend,
+        opts.retryAt,
       ],
     );
-
     if (orgId) announce(orgId, "call", "updated", callId);
+    return row?.pipeline_attempts ?? attempts + (opts.spend ? 1 : 0);
+  };
 
-    const used = row?.pipeline_attempts ?? attempts + 1;
-    if (used < MAX_PIPELINE_ATTEMPTS) {
+  const fail = async (stage: string, err: unknown, ctx?: FailContext) => {
+    // WHOSE FAULT, decided once, here (migration 0201). `error_message` keeps
+    // the raw vendor text for us; `failure_class` is what every client-facing
+    // surface reads instead of guessing from the status.
+    //
+    // Why it has to happen in `fail` and not at the call sites: there are
+    // eleven of them across this file and `asr-poll.ts`, and the one that was
+    // missed would be the one that tells a customer their recording is
+    // unreadable because our vendor's wallet is empty. One funnel, one verdict.
+    const classified = classifyFailure(stage, err);
+
+    // ── IS THIS THE VENDOR'S FAULT, AND IS IT NOW PARKED? ─────────────────
+    //
+    // Only when the caller named the provider it was talking to. A failure with
+    // no provider attached cannot be a provider's fault, and guessing would
+    // park a vendor over our own storage being down - taking ASR offline for
+    // six hours for a problem the vendor did not have.
+    let spend = true;
+    let retryAt: Date | null = null;
+    const parkSeconds = ctx?.provider ? parkDurationFor(classified) : null;
+    if (ctx?.provider && parkSeconds !== null) {
+      await parkProvider(
+        client,
+        ctx.provider,
+        classified.reason!,
+        classified.operatorSummary,
+        new Date(Date.now() + parkSeconds * 1000),
+      );
+      spend = false;
+      // Ask the router AFTER the park, so the answer accounts for it. Another
+      // provider usable → retry immediately and this call transcribes on its
+      // next attempt instead of dying on its last. Nothing usable → wait for
+      // the earliest park to expire rather than hammering on a backoff.
+      //
+      // "Immediately" means the next tick of the retry sweeper, 30s by default
+      // (PIPELINE_RETRY_INTERVAL_MS). That sweep is the only thing that may
+      // move a call out of FAILED_*; publishing from here instead would race
+      // it and risk the call being processed twice.
+      const route = await chooseAsrProvider(client);
+      retryAt = route.kind === "provider" ? new Date() : (route.retryAfter ?? new Date());
+      console.error(
+        `asr: parked ${ctx.provider} for ${parkSeconds}s [${classified.reason}] - ` +
+          (route.kind === "provider"
+            ? `routing to ${route.provider}`
+            : "no usable ASR provider, deferring work"),
+      );
+    }
+
+    const used = await record(stage, reasonOf(err), classified, { spend, retryAt });
+
+    // ── ESCALATE, ONCE PER INCIDENT ────────────────────────────────────────
+    //
+    // Two triggers, and the second one only exists because of the park above.
+    //
+    // 1. THE LAST ATTEMPT. A vendor blip that clears on retry 2 is not
+    //    something a human needs to read about - the retry machine already
+    //    handled it, and a queue full of self-healed blips is a queue nobody
+    //    opens. A failure that has exhausted its budget is, by definition, one
+    //    the machine could not fix.
+    //
+    // 2. A BLOCKING REASON THAT JUST PARKED A VENDOR. P1-A's whole point is
+    //    that a provider-level failure no longer spends the retry budget - so
+    //    on its own, trigger 1 would mean the exact incident this machinery was
+    //    built for (62 days of HTTP 402) never escalates at all, because no call
+    //    ever reaches attempt five. Fixing the hammering without this would have
+    //    traded a loud wrong answer for a silent one.
+    //
+    //    `PLATFORM_REASON_SEVERITY` already draws the line in the right place.
+    //    'blocking' means the reason does not degrade - no credit, no
+    //    credentials, no provider configured, storage down - and every call
+    //    through the stage fails until a human acts. A rate limit or a 5xx is
+    //    'minor'/'wrong': the park alone handles those, and they escalate only
+    //    if they persist long enough to exhaust a call's attempts.
+    //
+    // The de-duplication that keeps 2,792 failing calls to ONE ticket lives in
+    // the unique index, not here (see platform-escalation.ts), so a trigger
+    // firing on the first occurrence costs one row rather than thousands.
+    //
+    // Wrapped, and deliberately swallowed: escalation is telemetry about a
+    // failure, and telemetry that can turn a handled failure into an unhandled
+    // throw is worse than no telemetry. The call is already marked failed and
+    // the raw reason is already stored before this runs.
+    const blockingPark =
+      !spend &&
+      classified.reason !== null &&
+      PLATFORM_REASON_SEVERITY[classified.reason] === "blocking";
+    if (
+      orgId &&
+      classified.failureClass === "platform" &&
+      (used >= MAX_PIPELINE_ATTEMPTS || blockingPark)
+    ) {
+      try {
+        const outcome = await escalatePlatformFailure(client, {
+          orgId,
+          callId,
+          stage,
+          classified,
+        });
+        if (outcome.ref !== null) {
+          console.error(
+            `call ${callId}: platform failure at ${stage} [${classified.reason}] ` +
+              `${outcome.action} ticket ${callIssueRef(outcome.ref)} ` +
+              `(${outcome.occurrences} occurrence(s)): ${classified.operatorSummary}`,
+          );
+        }
+      } catch (escalationErr) {
+        console.error(`call ${callId}: could not raise an escalation ticket:`, escalationErr);
+      }
+    }
+
+    if (!spend) {
+      console.error(
+        `call ${callId} failed at ${stage} on a provider fault - attempt ${used} NOT spent, ` +
+          `retrying at ${retryAt?.toISOString() ?? "the next backoff"}:`,
+        err,
+      );
+    } else if (used < MAX_PIPELINE_ATTEMPTS) {
       console.error(
         `call ${callId} failed at ${stage} (attempt ${used}/${MAX_PIPELINE_ATTEMPTS}), ` +
           `retrying in ${retryBackoffSeconds(used)}s:`,
@@ -201,7 +396,51 @@ export function stageHelpers(
     }
   };
 
-  return { advance, fail };
+  /**
+   * No provider was usable, so the stage never ran.
+   *
+   * This is NOT `fail()` with a nicer message. Nothing about this call was
+   * tried, so there is nothing about it to learn from a retry and no reason to
+   * spend one of its attempts - and the client's row must read "processing
+   * delayed", which `failure_class = 'platform'` is what produces. A deployment
+   * with both vendors parked for six hours is an operations problem, and 900
+   * calls sitting at FAILED_ASR with four attempts burned would turn it into a
+   * data problem as well.
+   *
+   * It escalates on the same terms `fail()` does, because "no ASR provider is
+   * usable" is the single most blocking thing this pipeline can say.
+   */
+  const defer = async (
+    stage: string,
+    reason: PlatformFailureReason,
+    operatorDetail: string,
+    retryAt: Date,
+  ) => {
+    const classified: ClassifiedFailure = {
+      failureClass: "platform",
+      reason,
+      operatorSummary: operatorDetail,
+      // The same sentence `classifyFailure` gives every platform failure. Not
+      // re-worded here: one wording, one place, or the two drift and the
+      // client-facing copy stops being reviewable in one file.
+      clientSummary: classifyFailure(stage, new Error("platform")).clientSummary,
+      retryable: true,
+    };
+    await record(stage, operatorDetail, classified, { spend: false, retryAt });
+    console.error(
+      `call ${callId}: deferred at ${stage} [${reason}] until ${retryAt.toISOString()} - ` +
+        operatorDetail,
+    );
+    if (orgId && PLATFORM_REASON_SEVERITY[reason] === "blocking") {
+      try {
+        await escalatePlatformFailure(client, { orgId, callId, stage, classified });
+      } catch (escalationErr) {
+        console.error(`call ${callId}: could not raise an escalation ticket:`, escalationErr);
+      }
+    }
+  };
+
+  return { advance, fail, defer };
 }
 
 /**
@@ -319,9 +558,13 @@ export function orgStageHelpers(orgId: string, callId: string, attempts: number)
       withOrgContext(orgId, (client) =>
         stageHelpers(client, callId, attempts, orgId).advance(from, to),
       ),
-    fail: (stage, err) =>
+    fail: (stage, err, ctx) =>
       withOrgContext(orgId, (client) =>
-        stageHelpers(client, callId, attempts, orgId).fail(stage, err),
+        stageHelpers(client, callId, attempts, orgId).fail(stage, err, ctx),
+      ),
+    defer: (stage, reason, detail, retryAt) =>
+      withOrgContext(orgId, (client) =>
+        stageHelpers(client, callId, attempts, orgId).defer(stage, reason, detail, retryAt),
       ),
   };
 }
@@ -1167,6 +1410,17 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
   // ── asr ──────────────────────────────────────────────────────────────
   if (!(await advance("TRANSCODING", "TRANSCRIBING"))) return;
 
+  /**
+   * Which provider this run talked to, hoisted so the `catch` can name it.
+   *
+   * `fail()` needs it to tell "the vendor refused us" from "this call went
+   * wrong": only a failure with a provider attached may park a vendor and
+   * decline to spend the call's retry budget (P1-A). Undefined until the route
+   * is chosen, which means a failure BEFORE the submit - a missing recording,
+   * object storage down - behaves exactly as it always did and parks nothing.
+   */
+  let asrProvider: AsrProvider | undefined;
+
   // The duration read is INSIDE the try with the rest of the stage: it runs
   // after the call is already in TRANSCRIBING, so a blip on that one query
   // used to throw straight out of processCall and strand the call in a state
@@ -1221,7 +1475,38 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
         console.log(`call ${callId}: audio prep ${prepared.reason}`);
       }
 
-      if (sarvamAsrConfigured()) {
+      // ── WHICH PROVIDER, AND IS IT WORKING? ──────────────────────────────
+      //
+      // This was `if (sarvamAsrConfigured())` - key presence - and that single
+      // `if` is doc 49 P1. It answered "is a key set" while the code read the
+      // answer as "does this provider work", and for 62 days those disagreed:
+      // Sarvam's wallet was empty, GEMINI_API_KEY was set and funded the whole
+      // time, and 2,792 calls went to the empty one because a key was present.
+      //
+      // `chooseAsrProvider` reads `asr_provider_health` (0202) and answers the
+      // question the pipeline actually has, which is whether a provider is
+      // USABLE.
+      const route = await withOrgContext(orgId, (client) => chooseAsrProvider(client));
+      if (route.kind === "none") {
+        // Nothing to try. Defer - do not fail - and do not spend an attempt:
+        // this call was never attempted, and a customer must not be shown a
+        // red row because our vendors are both refusing us.
+        const soonest = route.retryAfter ?? new Date(Date.now() + 15 * 60 * 1000);
+        await helpers.defer(
+          "ASR",
+          route.parked.length > 0 ? "provider_out_of_credit" : "provider_not_configured",
+          route.parked.length > 0
+            ? `No ASR provider is usable: ${route.parked
+                .map((p) => `${p.provider} parked until ${p.parkedUntil.toISOString()} (${p.reason ?? "unknown"})`)
+                .join("; ")}. Top one up, or set ASR_PROVIDER_ORDER to a provider that works.`
+            : "No ASR provider is configured at all - set SARVAM_API_KEY or GEMINI_API_KEY.",
+          soonest,
+        );
+        return;
+      }
+      asrProvider = route.provider;
+
+      if (asrProvider === "sarvam") {
         // Batch provider: hand over the audio, record the job, and stop.
         // The call stays in TRANSCRIBING - which is exactly true - and the
         // poller drives it from here. Committing the job id before returning
@@ -1258,6 +1543,13 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
           // audio it has ACCEPTED, so a job that is submitted and then never
           // collected still cost money and still belongs on the ledger.
           await recordAsrUsage(client, orgId, callId, billableS, diarize);
+          // The submit is where a 402 arrives, so a submit the vendor ACCEPTED
+          // is the evidence that its account is funded and its credentials are
+          // live. Recording it here clears any park left over from an outage
+          // that has since been fixed - which is what lets a six-hour park end
+          // the moment somebody tops the account up, rather than six hours
+          // later.
+          await recordProviderSuccess(client, "sarvam");
         });
         console.log(
           `call ${callId}: submitted to ${process.env.SARVAM_STT_MODEL ?? "saaras:v3"} ` +
@@ -1271,16 +1563,20 @@ export async function processCall({ callId, orgId }: PipelineMessage): Promise<v
       // The duration goes in so the ASR validator can catch a timeline that
       // claims to run past the end of the audio - the inline provider does that
       // routinely, and a transcript is not evidence that its clock is real.
+      console.log(`call ${callId}: transcribing inline via ${describeProvider(asrProvider)}`);
       const result = await transcribe(audio, "audio/mp4", billableS);
       await withOrgContext(orgId, async (client) => {
         await persistTranscript(client, orgId, callId, result);
         // The inline provider diarizes as part of the same request rather
         // than as a priced add-on, so it is metered on the plain tier.
         await recordAsrUsage(client, orgId, callId, billableS, false);
+        await recordProviderSuccess(client, asrProvider!);
       });
     }
   } catch (err) {
-    await fail("ASR", err);
+    // The provider rides along, so a vendor-level error parks the VENDOR
+    // instead of spending this call's attempts (P1-A).
+    await fail("ASR", err, { provider: asrProvider });
     return;
   }
 

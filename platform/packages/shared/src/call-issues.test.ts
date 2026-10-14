@@ -9,8 +9,10 @@ import {
   CALL_ISSUE_SEVERITIES,
   CallIssueCategory,
   CallIssueEventKind,
+  CallIssueReporterRole,
   CallIssueResolution,
   CallIssueSeverity,
+  CallIssueSource,
   CallIssueStatus,
   CallIssueVisibility,
   callIssueRef,
@@ -75,18 +77,83 @@ function tableBody(table: string): string {
  * The non-greedy `[^,]*?` cannot cross into another column, because the only
  * thing between a column's name and its own CHECK is modifiers with no comma in
  * them.
- *
- * Reads the column definition and NOT a later `ALTER TABLE ... ADD CONSTRAINT`,
- * so a migration that widens one of these vocabularies later has to update this
- * test too. That is the intended cost: the failure is visible and names the
- * column, which is the whole point of the file.
  */
-function valuesInColumnCheck(table: string, column: string): string[] {
+function valuesInColumnDefinition(table: string, column: string): string[] | null {
   const body = tableBody(table);
   const re = new RegExp(`\\b${column} text[^,]*?CHECK \\(${column} IN \\(([^)]*)\\)`, "g");
   const all = [...body.matchAll(re)];
-  expect(all.length, `no column CHECK (${column} IN (...)) on ${table}`).toBe(1);
+  if (all.length === 0) return null;
+  expect(all.length, `ambiguous column CHECK (${column} IN (...)) on ${table}`).toBe(1);
   return Array.from(all[0][1].matchAll(/'([^']*)'/g), (m) => m[1]).sort();
+}
+
+/**
+ * The LAST `ALTER TABLE <table> ADD CONSTRAINT ... CHECK (col IN (...))` across
+ * every migration, or null if no migration ever widened this column.
+ *
+ * ── WHY THIS WAS ADDED (0201) ───────────────────────────────────────────────
+ *
+ * This file used to read the column definition and deliberately NOT a later
+ * ALTER, on the stated reasoning that a migration which widens a vocabulary
+ * "has to update this test too - that is the intended cost".
+ *
+ * 0201 widened three of these (`category`, `reported_by_role`, and
+ * `call_issue_events.kind`) and paid that cost, and paying it showed the
+ * reasoning was half right. The failure WAS visible and DID name the column,
+ * exactly as intended. But the only repair available was to hard-code 0201's
+ * new values into this file by hand - and a guard whose expected list is typed
+ * out by the same person who typed the migration is not comparing two
+ * independent sources any more. It is comparing a list to itself.
+ *
+ * So the ALTER is read instead. `effectiveValues` below is now the vocabulary
+ * the DATABASE will really enforce after every migration has run, whether that
+ * was set in the CREATE TABLE or widened by any migration since, and the
+ * comparison against the zod enum stays a comparison of two independent
+ * things.
+ *
+ * ONE RULE THIS IMPOSES ON FUTURE MIGRATIONS, and 0201 learned it the hard way:
+ * the ALTER must spell its value list out literally. 0201's first draft built
+ * the `kind` constraint at runtime with `pg_get_constraintdef` and `replace()`,
+ * which is tidier SQL and completely invisible here - the list would have
+ * existed only inside a live database, and this test would have gone on
+ * passing while guarding nothing. If you cannot read the vocabulary out of the
+ * .sql file, neither can this.
+ */
+function valuesInLatestAlter(table: string, column: string): string[] | null {
+  // The trailing `\)\s*\)` is load-bearing, and it is the same trap the
+  // `tableBody` helper above was written to avoid - rediscovered here the
+  // moment this function existed.
+  //
+  // 0147 carries a table-level invariant on the SAME column:
+  //
+  //     CHECK (status IN ('resolved','rejected','duplicate','withdrawn')
+  //            OR resolution IS NULL)
+  //
+  // That is not a vocabulary. It is a rule about when a resolution may be set,
+  // which happens to name four of the vocabulary's members. A reader that
+  // stops at the IN list's closing paren matches it happily and then reports
+  // that `CallIssueStatus` has eight values too many.
+  //
+  // Requiring the CHECK's own paren to close immediately after the IN list is
+  // what distinguishes "this column may only hold these values" from "this
+  // column being one of these values implies something else".
+  const re = new RegExp(
+    `ALTER TABLE ${table} ADD CONSTRAINT \\S+ CHECK \\(\\s*${column} IN \\(([^)]*)\\)\\s*\\)`,
+    "g",
+  );
+  const all = [...FLAT.matchAll(re)];
+  if (all.length === 0) return null;
+  const last = all[all.length - 1];
+  return Array.from(last[1].matchAll(/'([^']*)'/g), (m) => m[1]).sort();
+}
+
+/** What the database will actually enforce once every migration has run. */
+function effectiveValues(table: string, column: string): string[] {
+  const widened = valuesInLatestAlter(table, column);
+  if (widened !== null) return widened;
+  const inline = valuesInColumnDefinition(table, column);
+  expect(inline, `no CHECK (${column} IN (...)) for ${table}, inline or by ALTER`).not.toBeNull();
+  return inline as string[];
 }
 
 /**
@@ -98,25 +165,25 @@ function valuesInColumnCheck(table: string, column: string): string[] {
  * not is a row no console can render. Five vocabularies now have to agree, so
  * the comparison is machine-made rather than remembered.
  */
-describe("call issue vocabulary vs migration 0147", () => {
+describe("call issue vocabulary vs the migrations", () => {
   it("matches the call_issue_reports.category CHECK", () => {
-    expect([...CallIssueCategory.options].sort()).toEqual(valuesInColumnCheck("call_issue_reports", "category"));
+    expect([...CallIssueCategory.options].sort()).toEqual(effectiveValues("call_issue_reports", "category"));
   });
 
   it("matches the severity CHECK", () => {
-    expect([...CallIssueSeverity.options].sort()).toEqual(valuesInColumnCheck("call_issue_reports", "severity"));
+    expect([...CallIssueSeverity.options].sort()).toEqual(effectiveValues("call_issue_reports", "severity"));
   });
 
   it("matches the status CHECK", () => {
-    expect([...CallIssueStatus.options].sort()).toEqual(valuesInColumnCheck("call_issue_reports", "status"));
+    expect([...CallIssueStatus.options].sort()).toEqual(effectiveValues("call_issue_reports", "status"));
   });
 
   it("matches the resolution CHECK", () => {
-    expect([...CallIssueResolution.options].sort()).toEqual(valuesInColumnCheck("call_issue_reports", "resolution"));
+    expect([...CallIssueResolution.options].sort()).toEqual(effectiveValues("call_issue_reports", "resolution"));
   });
 
   it("matches the call_issue_events.visibility CHECK", () => {
-    expect([...CallIssueVisibility.options].sort()).toEqual(valuesInColumnCheck("call_issue_events", "visibility"));
+    expect([...CallIssueVisibility.options].sort()).toEqual(effectiveValues("call_issue_events", "visibility"));
   });
 
   /**
@@ -126,7 +193,24 @@ describe("call issue vocabulary vs migration 0147", () => {
    * compare the event vocabulary against the bell's.
    */
   it("matches the call_issue_events.kind CHECK", () => {
-    expect([...CallIssueEventKind.options].sort()).toEqual(valuesInColumnCheck("call_issue_events", "kind"));
+    expect([...CallIssueEventKind.options].sort()).toEqual(effectiveValues("call_issue_events", "kind"));
+  });
+
+  /** 0201: a report can now be filed by the system, which is not a persona
+   *  anybody holds. Same guard as the five above - the role is snapshotted
+   *  NOT NULL on the row, so an enum value the CHECK rejects is a 23514 on the
+   *  escalation path, which runs precisely when something is already broken. */
+  it("matches the call_issue_reports.reported_by_role CHECK", () => {
+    expect([...CallIssueReporterRole.options].sort()).toEqual(
+      effectiveValues("call_issue_reports", "reported_by_role"),
+    );
+  });
+
+  /** 0201: and `source` says whether a person or the pipeline filed it. */
+  it("matches the call_issue_reports.source CHECK", () => {
+    expect([...CallIssueSource.options].sort()).toEqual(
+      effectiveValues("call_issue_reports", "source"),
+    );
   });
 });
 

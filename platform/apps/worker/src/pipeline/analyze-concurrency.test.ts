@@ -83,7 +83,7 @@ function fakeClient() {
       if (/SELECT pipeline_attempts/.test(text)) {
         return { rows: [{ pipeline_attempts: 0 }], rowCount: 1 };
       }
-      if (/pipeline_attempts = pipeline_attempts \+ 1/.test(text)) {
+      if (/UPDATE calls\s+SET status = \$2,[\s\S]*error_message = \$3/.test(text)) {
         return { rows: [{ pipeline_attempts: 1 }], rowCount: 1 };
       }
       if (/UPDATE calls SET status = \$3/.test(text)) {
@@ -116,7 +116,7 @@ function ran(re: RegExp): boolean {
 
 const WROTE_EXTRACTION = /INSERT INTO ai_outputs/;
 const WROTE_INTELLIGENCE = /SET intelligence = \$2::jsonb|SET segments = \$2::jsonb/;
-const FAILED = /pipeline_attempts = pipeline_attempts \+ 1/;
+const FAILED = /UPDATE calls\s+SET status = \$2,[\s\S]*error_message = \$3/;
 
 beforeEach(() => {
   issued = [];

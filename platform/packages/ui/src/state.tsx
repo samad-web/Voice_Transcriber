@@ -283,10 +283,16 @@ const PIPELINE: Record<string, PipelineStage> = {
     label: "Transcode failed",
     hint: "The recording could not be converted - usually a truncated or silent file. There is no transcript for this call.",
   },
+  // NOTE: every hint below describes the CONTENT case - the recording or the
+  // transcript genuinely could not support the stage. That is only one of the
+  // two things these statuses carry; when `failure_class` is 'platform',
+  // `pipelineStage` replaces the whole entry (see PLATFORM_FAILURE_HINT). Do
+  // not soften these to cover both cases - a sentence that is vague enough to
+  // be true of either tells the reader nothing, which is where this started.
   FAILED_ASR: {
     phase: "error",
-    label: "Transcription failed",
-    hint: "Speech recognition could not read this recording. The call and its audio are still here; the transcript is not.",
+    label: "No transcript",
+    hint: "There was not enough usable speech in this recording to transcribe. The call and its audio are still here; the transcript is not.",
   },
   FAILED_ANALYZE: {
     phase: "error",
@@ -300,15 +306,87 @@ const PIPELINE: Record<string, PipelineStage> = {
   },
 };
 
-export function pipelineStage(status: string | null | undefined): PipelineStage {
+/* ── Whose fault it was ────────────────────────────────────────────────────
+ *
+ * `calls.failure_class` (migration 0201). The status says WHICH STAGE failed;
+ * this says WHOSE PROBLEM it is, and the two together are the only way the copy
+ * below can be true.
+ *
+ * Mirrors `FailureClass` in @aura/shared/provider-failures. It is re-declared
+ * here rather than imported because this package has no dependency on
+ * @aura/shared and adding one to carry a three-member union is not a trade
+ * worth making. `pipeline-stage.test.ts` pins the two lists together.
+ */
+export type FailureClass = "platform" | "content" | "config";
+
+/**
+ * What a client is told when the failure was OURS.
+ *
+ * ── THE COPY THIS REPLACED, AND WHY IT MATTERED ──────────────────────────
+ *
+ * Until 0201 every failed stage rendered a single sentence per status. For
+ * `FAILED_ASR` that sentence was:
+ *
+ *     "Speech recognition could not read this recording. The call and its
+ *      audio are still here; the transcript is not."
+ *
+ * On 2026-10-14 that line was showing on 2,792 calls whose real cause was an
+ * unfunded vendor account - HTTP 402, "No credits available.", unbroken since
+ * 2026-08-13. So it was wrong three times over: speech recognition never ran,
+ * the recording was perfectly readable, and "is not" said terminal about a call
+ * that needed nothing but a top-up and a re-run.
+ *
+ * The damage is not that it was unhelpful. It is that it moved suspicion onto
+ * the customer's own handsets - the one party with nothing to fix - while the
+ * party who could fix it was never told.
+ *
+ * ── THE THREE THINGS THIS COPY MUST DO ───────────────────────────────────
+ *
+ *   1. Not blame their data. The fault is ours; the sentence says ours.
+ *   2. Say it is already being handled, by name, so the reasonable next
+ *      question ("has anyone noticed?") is answered before it is asked.
+ *   3. Say nothing is needed from them, because nothing is.
+ *
+ * ── AND THE ONE THING IT MUST NOT DO ─────────────────────────────────────
+ *
+ * Name the vendor, quote a status code, or mention credit. Not because it is
+ * embarrassing - because it is useless to the reader and because the moment
+ * this string carries vendor detail it has to be reviewed as a disclosure
+ * rather than as copy. `provider-failures.ts` has `leaksVendorDetail()`
+ * guarding the same boundary on the server side.
+ */
+const PLATFORM_FAILURE_HINT =
+  "This did not complete on our side - nothing is wrong with the call or the recording. " +
+  "Our technical team was notified automatically and is working on it. " +
+  "Nothing is needed from you, and no call data has been lost.";
+
+/** The label beside it. "Failed" is wrong when we intend to finish the job. */
+const PLATFORM_FAILURE_LABEL = "Processing delayed";
+
+export function pipelineStage(
+  status: string | null | undefined,
+  failureClass?: FailureClass | null,
+): PipelineStage {
   if (!status) return { phase: "working", label: "Pending", hint: "" };
-  return (
-    PIPELINE[status] ?? {
+
+  const stage =
+    PIPELINE[status] ??
+    ({
       // An unknown status is not an error - it is a newer API than this build.
       // Say so rather than painting it orange and alarming somebody.
       phase: "working",
       label: status,
       hint: "",
-    }
-  );
+    } satisfies PipelineStage);
+
+  // A platform failure overrides the status's own copy, because the status's
+  // copy is written for the content case and says so in its wording. Only for
+  // an `error` phase: a platform class on a settled or working row is stale
+  // data from a previous attempt, and letting it repaint a COMPLETE call as
+  // "Processing delayed" would be a new lie in place of the old one.
+  if (failureClass === "platform" && stage.phase === "error") {
+    return { phase: "error", label: PLATFORM_FAILURE_LABEL, hint: PLATFORM_FAILURE_HINT };
+  }
+
+  return stage;
 }

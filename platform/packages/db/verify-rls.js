@@ -206,6 +206,25 @@ const NON_TENANT_TABLES = new Set([
   //                     RLS FORCED with no policy; `aura_app` and all three
   //                     Supabase API roles revoked; admin pool only.
   "billing_webhook_events",
+  // asr_provider_health 0202. Whether an ASR VENDOR is usable right now. The
+  //                     vendor's credit balance is one account shared by every
+  //                     tenant - one wallet, one rate limit, all of our audio
+  //                     through it - so an org_id here would be a fiction, and
+  //                     a per-tenant park would relearn the same 402 once per
+  //                     tenant instead of once.
+  //
+  //                     This is the table that ends doc 49 P1: for 62 days the
+  //                     pipeline chose its provider on KEY PRESENCE, so a
+  //                     vendor with an empty wallet kept every call while a
+  //                     funded one sat idle beside it. Holds a provider name, a
+  //                     park expiry and the vendor's own error text; no tenant
+  //                     data and nothing a client may read.
+  //
+  //                     RLS FORCED with no policy; `aura_app`, PUBLIC and all
+  //                     three Supabase API roles revoked. Written only by the
+  //                     worker on the admin pool, read by the operator console
+  //                     and the alert cron on the same pool.
+  "asr_provider_health",
 ]);
 
 /**

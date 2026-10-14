@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   CALL_ISSUE_CATEGORIES,
+  CLIENT_REPORTABLE_CATEGORIES,
   CALL_ISSUE_SEVERITIES,
   CallIssueCategory,
   CallIssueSeverity,
@@ -67,7 +68,11 @@ export function ReportIssueDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const options = CallIssueCategory.options.filter(
+  // CLIENT_REPORTABLE_CATEGORIES, not CallIssueCategory.options: 0201 added
+  // `processing_failed`, which the SYSTEM files when a failure was ours. A
+  // client cannot diagnose whose fault a stage was, so offering it here would
+  // ask them a question they have no way to answer.
+  const options = CLIENT_REPORTABLE_CATEGORIES.filter(
     (key) => hasRecording || !CALL_ISSUE_CATEGORIES[key].needsRecording,
   );
 

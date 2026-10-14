@@ -315,6 +315,18 @@ export class OwnerCallsController {
       const { rows } = await client.query(
         `${WINDOW_CTE}
          SELECT c.id, c.direction, c.started_at, c.duration_s, c.status,
+                -- 0201. error_message stays excluded from this shape and must
+                -- keep staying excluded: it carries vendor text, status codes
+                -- and request ids. failure_class is the opposite - a
+                -- three-value verdict about WHOSE problem the failure is, with
+                -- no vendor detail in it by construction, and it is the only
+                -- thing that lets a client's own row stop telling them their
+                -- recording was unreadable when our ASR account was simply
+                -- unfunded. failure_reason_code is NOT selected here; that one
+                -- does name a vendor problem and belongs to the operator.
+                -- (No backticks in this comment. It lives inside a TS template
+                -- literal, and one backtick here ends the SQL string.)
+                c.failure_class,
                 c.remote_name, c.remote_number_prefix, c.remote_number_last3,
                 c.device_id, c.disposition_key,
                 c.device_id, COALESCE(d.telecaller_name, d.label) AS telecaller,

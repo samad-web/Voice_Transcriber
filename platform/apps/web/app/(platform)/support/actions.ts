@@ -53,6 +53,21 @@ export interface Escalation {
   snap_duration_s: number;
   snap_direction: string;
   call_access_gate_enabled: boolean;
+  /**
+   * 'client' = a person filed it. 'system' = the pipeline noticed (0201).
+   *
+   * The distinction changes how the row should be READ, not merely labelled: a
+   * client ticket is one person's experience of one call, and a system ticket is
+   * one incident standing for `occurrence_count` calls. Rendering the second as
+   * the first is how a 2,792-call outage looks like a minor complaint.
+   */
+  source: "client" | "system";
+  /** PlatformFailureReason for a system ticket; null for a client report. */
+  platform_reason: string | null;
+  /** How many calls this one ticket stands for. Always 1 for a client report. */
+  occurrence_count: number;
+  /** The most recent call to hit it - how a self-healed incident shows itself. */
+  last_occurred_at: string | null;
 }
 
 /** The detail adds the rest of the snapshot and the call's CURRENT state. */
@@ -105,6 +120,10 @@ export interface EscalationStats {
   resolved_7d: number;
   reprocessed_30d: number;
   oldest_unacknowledged_hours: number | null;
+  /** Live tickets the system raised itself (0201). */
+  live_platform_incidents: number;
+  /** And the number of CALLS those incidents stand for, which is the real size. */
+  live_platform_occurrences: number;
 }
 
 /**

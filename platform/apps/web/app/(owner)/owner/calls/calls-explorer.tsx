@@ -640,7 +640,7 @@ export function CallsExplorer({
                         // statuses into a sentence saying what is happening and
                         // whether it is theirs to fix; the spinner says it is
                         // still moving.
-                        <ReadPending status={call.status} />
+                        <ReadPending status={call.status} failureClass={call.failure_class} />
                       )}
                     </TableCell>
                     <TableCell label="Lead">
@@ -714,8 +714,19 @@ export function CallsExplorer({
  * moving. A settled row gets no spinner - an animation that never stops is a
  * promise the row is about to change, and on a FAILED_ASR call it is a lie.
  */
-function ReadPending({ status }: { status: string }) {
-  const stage = pipelineStage(status);
+function ReadPending({
+  status,
+  failureClass,
+}: {
+  status: string;
+  failureClass?: "platform" | "content" | "config" | null;
+}) {
+  // Both arguments, always. `pipelineStage(status)` alone still compiles and
+  // still renders - it just renders the CONTENT wording for every failure,
+  // which is the bug 0201 exists to fix (a vendor's empty account shown to the
+  // customer as "could not read this recording"). If you add another call
+  // site, pass the class.
+  const stage = pipelineStage(status, failureClass);
   const working = stage.phase === "working";
 
   return (

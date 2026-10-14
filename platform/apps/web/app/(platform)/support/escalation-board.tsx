@@ -219,6 +219,37 @@ export function EscalationBoard({
         </div>
       ) : null}
 
+      {/*
+        ── THE TILE THAT WOULD HAVE ENDED P1 IN A DAY ──────────────────────────
+
+        Only rendered when there IS a live platform incident, because a tile
+        that reads "0" every day for a year is a tile nobody looks at on the day
+        it reads 2,792.
+
+        It leads with the OCCURRENCE count, not the ticket count. One row saying
+        "1 incident" is indistinguishable from a minor complaint; "2,792 calls
+        affected" is the sentence that gets somebody out of their chair. That
+        difference is the entire reason 0201 counts occurrences at all.
+
+        Orange, never red - red is a missed call in this console and nothing else.
+      */}
+      {initialStats && initialStats.live_platform_incidents > 0 ? (
+        <Card className="border-orange/40 bg-orange/5">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="font-sans text-sm font-semibold text-orange">
+              {initialStats.live_platform_occurrences.toLocaleString()}{" "}
+              {initialStats.live_platform_occurrences === 1 ? "call" : "calls"} affected by{" "}
+              {initialStats.live_platform_incidents}{" "}
+              {initialStats.live_platform_incidents === 1 ? "incident" : "incidents"} on our side
+            </span>
+            <span className="font-sans text-xs text-text-muted">
+              Raised automatically - no client reported these. Nothing is wrong with their
+              recordings.
+            </span>
+          </div>
+        </Card>
+      ) : null}
+
       {/* ── Filters ────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-2">
         {TABS.map((t) => (
@@ -291,6 +322,23 @@ export function EscalationBoard({
                       {r.reprocess_count > 0 ? (
                         <StatusChip tone="outline">re-run ×{r.reprocess_count}</StatusChip>
                       ) : null}
+                      {/*
+                        A system ticket says so, and says how big it is. Without
+                        these two chips an outage spanning thousands of calls
+                        renders identically to one person's complaint about one
+                        call - the row was being written since 0201 and read by
+                        nothing, which is the same burial with extra steps.
+                      */}
+                      {r.source === "system" ? (
+                        <>
+                          <StatusChip tone="outline">ours, not theirs</StatusChip>
+                          {r.occurrence_count > 1 ? (
+                            <StatusChip tone="danger">
+                              ×{r.occurrence_count.toLocaleString()} calls
+                            </StatusChip>
+                          ) : null}
+                        </>
+                      ) : null}
                     </div>
                     <p className="mt-0.5 line-clamp-1 font-sans text-xs text-text-muted">
                       {r.description}
@@ -320,6 +368,42 @@ export function EscalationBoard({
                   {current.reported_by_name} ({current.reported_by_role})
                 </p>
               </div>
+
+              {/*
+                ── WHAT A SYSTEM TICKET IS, STATED ON THE TICKET ──────────────
+                
+                Three facts an operator needs before anything else, and the
+                third is the one nobody thinks to ask for: WHEN IT LAST
+                HAPPENED. A live incident whose newest occurrence is three days
+                old has healed itself and is waiting to be closed; one that
+                happened a minute ago is still costing calls right now. Both
+                look identical on a board that only shows when a ticket was
+                opened - and a queue full of incidents that ended last week is a
+                queue people learn to scroll past.
+              */}
+              {current.source === "system" ? (
+                <section className="space-y-1 rounded-md border border-orange/40 bg-orange/5 p-3">
+                  <h3 className="font-sans text-xs font-semibold tracking-wide text-orange uppercase">
+                    Raised by the system · {current.platform_reason ?? "unclassified"}
+                  </h3>
+                  <p className="font-sans text-xs text-text">
+                    {current.occurrence_count.toLocaleString()}{" "}
+                    {current.occurrence_count === 1 ? "call" : "calls"} have hit this.
+                    {current.last_occurred_at
+                      ? ` Most recent ${age(current.last_occurred_at)} ago.`
+                      : ""}
+                  </p>
+                  <p className="font-sans text-xs text-text-muted">
+                    Nobody reported this - the pipeline classified the failure as ours and opened
+                    one ticket for the whole incident. The vendor&apos;s own response is on the
+                    internal timeline below; the client has been told only that we spotted it.
+                    {current.last_occurred_at &&
+                    Date.now() - new Date(current.last_occurred_at).getTime() > 6 * 3_600_000
+                      ? " Nothing has hit it for over six hours, so it may already be over."
+                      : ""}
+                  </p>
+                </section>
+              ) : null}
 
               <section className="space-y-1">
                 <h3 className="font-sans text-xs font-semibold tracking-wide text-text-muted uppercase">
