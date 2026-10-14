@@ -1,8 +1,18 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { jwtSecret } from "../config/secrets";
 
 const NONCE_TTL_MS = 2 * 60 * 1000;
 
-const secret = () => process.env.JWT_SECRET ?? "dev-jwt-secret-change-me";
+/**
+ * Read at USE time, not at module load.
+ *
+ * `jwtSecret()` throws when the secret is missing or is a published default,
+ * and a module-scope call would move that throw to import time - which means
+ * any test or script that imports this file, for any reason, dies before it
+ * runs. At use time the failure lands on the request that needed a secret,
+ * which is where it belongs.
+ */
+const secret = () => jwtSecret();
 
 /**
  * Stateless HMAC nonce for the device auth challenge (design doc §3.2).

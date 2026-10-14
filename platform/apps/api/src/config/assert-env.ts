@@ -44,7 +44,14 @@ interface RequiredVar {
  * `.env.example`, `.env.production.example`, or the `??` fallback in the code
  * itself. Anything published is, by definition, not a secret.
  */
-const REQUIRED: RequiredVar[] = [
+/**
+ * Exported for `secrets.spec.ts`, which asserts that `jwtSecret()`'s
+ * rejected-value list is a superset of this one. The two lists are
+ * deliberately separate - a second defence that imports the first shares its
+ * single point of failure - and separate lists are exactly the shape that
+ * drifts silently, so a test reads both.
+ */
+export const REQUIRED: RequiredVar[] = [
   {
     name: "ADMIN_API_KEY",
     why:

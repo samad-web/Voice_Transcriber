@@ -34,15 +34,39 @@ export const USER_A = "00000000-0000-4000-8000-000000000003";
 export const USER_B = "00000000-0000-4000-8000-0000000000b3";
 export const DEVICE_A = "00000000-0000-4000-8000-00000000d001";
 /**
- * NOT a valid uuid - `i` is not a hex digit. Kept verbatim from the fixture
- * contract because that is the point: `DeviceAuthGuard:41` copies
- * `instance_id` off the JWT with no parsing at all, so an id this malformed
- * still reaches `req.device`. See the D9/D10 cases in device-auth.guard.spec.ts.
+ * A VALID uuid, which it did not used to be.
+ *
+ * It was `...00000000i001` - `i` is not a hex digit - and that was deliberate:
+ * it documented that `DeviceAuthGuard` copied `instance_id` off the JWT with no
+ * parsing at all, so an id this malformed still reached `req.device` and from
+ * there a database write.
+ *
+ * Doc 49 P6b closed that: the guard now validates every claim the handlers go
+ * on to trust. So a fixture that is malformed by design would make every
+ * ordinary device case in the suite fail for a reason unrelated to what it is
+ * testing. The malformed value lives on as `MALFORMED_INSTANCE_ID`, used only
+ * by the cases that prove it is refused.
  */
-export const INSTANCE_A = "00000000-0000-4000-8000-00000000i001";
+export const INSTANCE_A = "00000000-0000-4000-8000-00000000e001";
 
-/** The device JWT secret. Set EXPLICITLY in specs - see device-auth.guard.spec.ts. */
-export const DEV_JWT_SECRET = "dev-jwt-secret-change-me";
+/** Kept ONLY so a test can prove the guard refuses it. `i` is not hex. */
+export const MALFORMED_INSTANCE_ID = "00000000-0000-4000-8000-00000000i001";
+
+/**
+ * The device JWT secret the specs sign with. Set EXPLICITLY in specs - see
+ * device-auth.guard.spec.ts.
+ *
+ * NOT "dev-jwt-secret-change-me" any more, and that is the point. `jwtSecret()`
+ * (config/secrets.ts) now THROWS on that literal even when it is explicitly
+ * set, because it is published in this repository and a `??` that substitutes a
+ * known-public value is a defence that fails open. A test harness signing with
+ * it would be exercising a path production can no longer take, which is the
+ * worst kind of green.
+ */
+export const DEV_JWT_SECRET = "test-only-jwt-secret-7f3a9c2e5b81";
+
+/** The published literal, kept ONLY so tests can prove it is refused. */
+export const PUBLISHED_DEV_JWT_SECRET = "dev-jwt-secret-change-me";
 
 // ── request / context fakes ──────────────────────────────────────────────────
 

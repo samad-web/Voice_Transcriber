@@ -13,10 +13,16 @@
  * happy path.
  *
  * `JWT_SECRET` IS SET EXPLICITLY in `beforeEach` (inventory 13 §5.5). The guard
- * reads `process.env.JWT_SECRET ?? "dev-jwt-secret-change-me"` at call time, so
- * a runner or CI shell exporting a real value would otherwise fail every case
- * in this file with no defect present - the `pipeline.test.ts:74` failure mode
- * report 12 §5.6 records. Two cases deliberately override it; both restore.
+ * reads it through `jwtSecret()` at call time, so a runner or CI shell
+ * exporting a real value would otherwise fail every case in this file with no
+ * defect present - the `pipeline.test.ts:74` failure mode report 12 §5.6
+ * records. Several cases deliberately override it; all restore.
+ *
+ * The harness signs with `DEV_JWT_SECRET`, which is NO LONGER the published
+ * `dev-jwt-secret-change-me` - `jwtSecret()` now refuses that literal outright
+ * (doc 49 P6a), so a harness still signing with it would exercise a path
+ * production cannot take. `PUBLISHED_DEV_JWT_SECRET` is kept for the two cases
+ * that prove the refusal.
  *
  * Nothing here opens a socket or a database connection: the guard has no
  * injected dependencies at all, which is itself asserted below.
@@ -31,7 +37,9 @@ import { TenantGuard } from "./tenant.guard";
 import {
   DEVICE_A,
   DEV_JWT_SECRET,
+  PUBLISHED_DEV_JWT_SECRET,
   INSTANCE_A,
+  MALFORMED_INSTANCE_ID,
   ORG_A,
   ORG_B,
   expectHttpError,
@@ -291,33 +299,43 @@ describe("DeviceAuthGuard", () => {
 
   // ── the secret itself (report 12 §2.3) ─────────────────────────────────────
   describe("the JWT_SECRET fallback (report 12 §2.3)", () => {
-    it("accepts the PUBLISHED dev literal when JWT_SECRET is unset - today's behaviour", async () => {
-      // PINNED DELIBERATELY, and it is the highest-severity thing in this file.
-      // `process.env.JWT_SECRET ?? "dev-jwt-secret-change-me"` (`:33`) is one of
-      // four live sites (report 12 §2.3), and that literal is published in this
-      // repository's `.env.example`. A deployment that forgets JWT_SECRET
-      // therefore accepts device tokens minted by anyone who has read the repo
-      // - for any org_id they care to name (see D10). Unlike ADMIN_API_KEY,
-      // there is no Stage 0.2-style production fail-closed here yet.
+    it("refuses a token when JWT_SECRET is unset - in EVERY environment", async () => {
+      // THIS CASE USED TO ASSERT THE OPPOSITE, and the inversion is the fix
+      // (doc 49 P6a). The guard read
+      // `process.env.JWT_SECRET ?? "dev-jwt-secret-change-me"`, one of four
+      // sites doing the same, and that literal is published in this
+      // repository's .env.example. A deployment that forgot JWT_SECRET
+      // therefore accepted device tokens minted by anyone who had read the
+      // repo, for any org_id they cared to name.
+      //
+      // `assertRequiredEnv()` meant the process could not reach that line in
+      // production - but that was the ONLY defence, where ADMIN_API_KEY has
+      // two, and this repository is public. A refactor that moves a boot path
+      // or an entry point that skips the assertion made it live.
+      //
+      // Not gated on NODE_ENV, deliberately. The previous plan for this fix was
+      // "no fallback under production", which leaves a dev machine happily
+      // accepting forgeries and leaves the failure mode one env var away. There
+      // is no environment in which signing with a published constant is right.
       delete process.env.JWT_SECRET;
-      const token = validDeviceToken({}, { secret: "dev-jwt-secret-change-me" });
+      const token = validDeviceToken({}, { secret: PUBLISHED_DEV_JWT_SECRET });
       const { context, req } = makeExecutionContext({ headers: { authorization: bearer(token) } });
 
-      expect(guard.canActivate(context)).toBe(true);
-      expect(req.device?.orgId).toBe(ORG_A);
+      await expectHttpError(() => guard.canActivate(context), {
+        type: UnauthorizedException,
+        message: BAD_TOKEN,
+        status: 401,
+      });
+      expect(req.device).toBeUndefined();
     });
 
-    it.skip("(correct) · refuses the dev literal when JWT_SECRET is unset in production", async () => {
-      // DEFECT - inventory 13 §2.5 / report 12 §2.3, finding still open. Un-skip
-      // when `device-auth.guard.ts:33` is given the `resolveAdminKey()` treatment
-      // from Stage 0.2: no fallback literal under NODE_ENV=production, so an
-      // unset secret can match nothing rather than matching a public string.
-      // Fixing this ONE site is not enough - `device-nonce.ts:5`,
-      // `devices.controller.ts:193` and `erasure.controller.ts:97` share the
-      // fallback and must move together or handsets stop authenticating.
-      process.env.NODE_ENV = "production";
-      delete process.env.JWT_SECRET;
-      const token = validDeviceToken({}, { secret: "dev-jwt-secret-change-me" });
+    it("refuses a token even when JWT_SECRET is EXPLICITLY the published literal", async () => {
+      // The second half, and the one an "unset check" would have missed. A
+      // deployment that copied .env.example and filled in everything except
+      // this is indistinguishable from one that forgot the variable, so the
+      // rejected-value list matters as much as the unset check.
+      process.env.JWT_SECRET = PUBLISHED_DEV_JWT_SECRET;
+      const token = validDeviceToken({}, { secret: PUBLISHED_DEV_JWT_SECRET });
       const { context } = makeExecutionContext({ headers: { authorization: bearer(token) } });
 
       await expectHttpError(() => guard.canActivate(context), {
@@ -333,7 +351,7 @@ describe("DeviceAuthGuard", () => {
       // could pass for the wrong reason (a guard that verified nothing at all
       // would satisfy it).
       process.env.JWT_SECRET = "a-real-production-secret";
-      const token = validDeviceToken({}, { secret: "dev-jwt-secret-change-me" });
+      const token = validDeviceToken({}, { secret: PUBLISHED_DEV_JWT_SECRET });
       const { context } = makeExecutionContext({ headers: { authorization: bearer(token) } });
 
       await expectHttpError(() => guard.canActivate(context), {
@@ -515,52 +533,60 @@ describe("DeviceAuthGuard", () => {
     });
   });
 
-  // ── the tenant claims: finding 4, inventory 13 §7 ──────────────────────────
-  describe("org_id / instance_id are taken on trust (inventory 13 §7 finding 4)", () => {
-    it("D9 · ALLOWS a token with no org_id and no instance_id, leaving both undefined", () => {
-      // PINNED DELIBERATELY. Neither claim is validated (`:40-41`) - no presence
-      // check, no uuid parse. `req.device.orgId` therefore reaches
-      // `withOrg(undefined, …)` in every device handler, which sets
-      // `app.org_id` to undefined and hands RLS a null tenant. A guard that
-      // rejected this would be strictly better; this test exists so that
-      // improvement is a deliberate act with a red test, not a silent change.
+  // ── the tenant claims: finding 4, inventory 13 §7, CLOSED by doc 49 P6b ────
+  describe("every claim the handlers trust is validated (P6b)", () => {
+    it("D9 · rejects a token that names no tenant", async () => {
+      // WAS "D9 · ALLOWS ...", and the inversion is the fix. Neither claim was
+      // validated - no presence check, no uuid parse - so `req.device.orgId`
+      // reached `withOrg(undefined, …)` in every device handler, which sets
+      // `app.org_id` from nothing and hands RLS a null tenant. What RLS does
+      // with that is not a question worth having an answer to.
       const token = signToken(
         { scope: "device", cfg_ver: 3 },
         { subject: DEVICE_A, expiresIn: "15m" },
       );
       const { context, req } = makeExecutionContext({ headers: { authorization: bearer(token) } });
 
-      expect(guard.canActivate(context)).toBe(true);
-      expect(req.device).toEqual({
-        deviceId: DEVICE_A,
-        orgId: undefined,
-        instanceId: undefined,
-        cfgVer: 3,
+      await expectHttpError(() => guard.canActivate(context), {
+        type: UnauthorizedException,
+        message: BAD_TOKEN,
+        status: 401,
       });
+      expect(req.device).toBeUndefined();
     });
 
-    it("D9 · ALLOWS org_id / instance_id that are not uuids at all", () => {
-      // The fixture `INSTANCE_A` is deliberately NOT a valid uuid (`i` is not a
-      // hex digit, guard-harness.spec.ts:47) and it still lands on the request
-      // - which is the whole point. Compare `TenantGuard:77`, which parses the
-      // org with zod before pinning it. The device path has no equivalent.
-      const token = validDeviceToken({ org_id: "'; DROP TABLE calls; --", instance_id: 42 });
-      const { context, req } = makeExecutionContext({ headers: { authorization: bearer(token) } });
+    it("D9 · rejects org_id / instance_id that are not uuids at all", async () => {
+      // The SQL-injection-shaped org_id is not the threat - every query in this
+      // codebase is parameterised - but it is the clearest possible evidence
+      // that nothing was parsing the claim. Compare `TenantGuard:77`, which has
+      // always parsed the org with zod before pinning it; the device path now
+      // has its equivalent.
+      for (const payload of [
+        { org_id: "'; DROP TABLE calls; --" },
+        { instance_id: 42 },
+        { org_id: MALFORMED_INSTANCE_ID },
+        { instance_id: MALFORMED_INSTANCE_ID },
+        { org_id: "" },
+        { org_id: null },
+      ]) {
+        const token = validDeviceToken(payload);
+        const { context, req } = makeExecutionContext({ headers: { authorization: bearer(token) } });
 
-      expect(guard.canActivate(context)).toBe(true);
-      expect(req.device?.orgId).toBe("'; DROP TABLE calls; --");
-      expect(req.device?.instanceId).toBe(42);
+        await expectHttpError(() => guard.canActivate(context), {
+          type: UnauthorizedException,
+          message: BAD_TOKEN,
+          status: 401,
+        });
+        expect(req.device).toBeUndefined();
+      }
     });
 
-    it.skip("D9 (correct) · rejects a token that names no tenant", async () => {
-      // DEFECT - inventory 13 §7 finding 4 (`device-auth.guard.ts:40-41`),
-      // severity medium. The guard should refuse a token with no `org_id`
-      // rather than pass `undefined` into `withOrg`. Un-skip when the guard
-      // validates the claim; a uuid parse alone closes this without needing a
-      // database lookup, and is a strictly smaller change than D10's.
+    it("rejects a subject that is not a device id", async () => {
+      // `sub` becomes `WHERE d.id = $1`. A non-uuid there is a type error from
+      // Postgres - a 500 on an unauthenticated route - rather than a 401.
       const token = signToken(
-        { scope: "device", cfg_ver: 3 },
-        { subject: DEVICE_A, expiresIn: "15m" },
+        { scope: "device", org_id: ORG_A, instance_id: INSTANCE_A, cfg_ver: 3 },
+        { subject: "not-a-uuid", expiresIn: "15m" },
       );
       const { context } = makeExecutionContext({ headers: { authorization: bearer(token) } });
 
@@ -587,15 +613,32 @@ describe("DeviceAuthGuard", () => {
     });
 
     it.skip("D10 (correct) · rejects a token whose org_id is not the device's own org", async () => {
-      // DEFECT - inventory 13 §2.5 D10. The correct guard resolves the device's
-      // org from `devices.org_id` and ignores (or verifies) the claim. That
-      // needs a database read this guard cannot currently do (see the
-      // no-dependencies test at the top of this file), so closing it is a
-      // structural change: either the guard gains a lookup, or the handlers stop
-      // trusting `req.device.orgId` and re-derive it from the device row they
-      // already SELECT (`calls.controller.ts:131-139`,
-      // `devices.controller.ts:225-231`). The second is cheaper and the queries
-      // are already there.
+      // STAYS SKIPPED, and after doc 49 P6b that is a decision rather than a
+      // backlog item. Read it with the two cases above and the guard's own
+      // class comment.
+      //
+      // The guard cannot tell whether DEVICE_A belongs to ORG_B without a
+      // database read, and it deliberately does not do one: this is the hottest
+      // `@SkipThrottle()`d route on the platform, and a round trip per ingest
+      // request is a real cost for a check that is already made one layer down.
+      //
+      // WHERE IT IS ACTUALLY CLOSED. Every device handler opens
+      // `db.withOrg(req.device.orgId, …)` and then reads its own device row by
+      // id. A token claiming ORG_B therefore enters ORG_B's RLS context and
+      // finds NO row for DEVICE_A - because the row is in ORG_A - so
+      // `calls.controller.ts` throws 409 "device or org is not active" and
+      // `devices.controller.ts` throws 401 "device not found". The claim does
+      // not grant access to the named tenant; it grants a context in which the
+      // caller owns nothing.
+      //
+      // That is enforced by RLS rather than by this file, so the assertion
+      // belongs in the isolation suite (which runs against a real database),
+      // not here. What this suite CAN pin, and now does, is that the claim is a
+      // well-formed uuid - so the context is never opened from undefined.
+      //
+      // Un-skip only if the guard is given a cached device lookup. If somebody
+      // does that, delete the three paragraphs above rather than leaving them
+      // to contradict the code.
       const token = validDeviceToken({ org_id: ORG_B });
       const { context } = makeExecutionContext({ headers: { authorization: bearer(token) } });
 

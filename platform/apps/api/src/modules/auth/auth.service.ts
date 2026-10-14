@@ -346,6 +346,116 @@ export class AuthService {
     return parseOwnerRole(row.owner_role);
   }
 
+  /**
+   * A VERIFIED SUPABASE SUBJECT BECOMES A PRINCIPAL, AND THE ORG IS PINNED
+   * HERE (doc 49 P5-A).
+   *
+   * ── WHY THE ORG CANNOT BE STATED ON THIS PATH ─────────────────────────────
+   *
+   * The admin-key path trusts `x-org-id` by design: the web tier holds the key
+   * and resolves the org from a verified session server-side, so the header
+   * carries forward a fact rather than asserting one. That is sound while the
+   * console is the only client, and it is the whole of the tenant boundary.
+   *
+   * This path has no such premise - the caller is whoever holds a Supabase
+   * token, which may be a phone, a portal or a script. So the org comes from
+   * the DATABASE: `claims.sub` → `users.sso_subject` → `memberships`. A token
+   * for org A cannot reach org B even while sending `x-org-id: B`, because
+   * nothing on this path reads that header as an assertion.
+   *
+   * ── THE ONE THING `x-org-id` STILL DOES HERE ──────────────────────────────
+   *
+   * SELECTS, never asserts. A person can belong to several workspaces, and
+   * something has to decide which one a request is for. So `wantedOrgId` is
+   * matched against the caller's OWN active memberships: a match pins that org,
+   * and a miss is a denial rather than a fallback. Falling back to "their first
+   * membership" would mean a request meant for org B silently acting on org A,
+   * which is worse than a 403 in every way that matters.
+   *
+   * With no `wantedOrgId` and exactly one membership, that one is pinned. With
+   * several and no choice stated, this returns `null`: the caller must say
+   * which, and guessing on their behalf is how a multi-workspace owner writes a
+   * lead into the wrong company.
+   *
+   * ── WHAT IT DELIBERATELY DOES NOT GRANT ───────────────────────────────────
+   *
+   * `platform_admin`. A Supabase session is a TENANT identity here, never an
+   * operator one: `role` comes from the membership row, and an operator has no
+   * membership so resolves nothing at all. Cross-tenant operator work keeps
+   * going through the admin key, which is the credential that is actually
+   * audited for it (P5-D).
+   */
+  async principalFromSupabaseSubject(
+    subject: string,
+    email: string | undefined,
+    wantedOrgId: string | undefined,
+  ): Promise<Principal | null> {
+    const {
+      rows: [row],
+    } = await this.db.adminPool().query<{
+      user_id: string;
+      org_id: string;
+      role: string;
+      owner_role: string | null;
+      recordings_listen: boolean;
+      recordings_export: boolean;
+      membership_count: string;
+    }>(
+      // `sso_subject` is UNIQUE, so the subject identifies at most one person.
+      // The email is a SECONDARY match and only for a user whose row predates
+      // their first SSO sign-in - ordered after the subject match so a subject
+      // hit always wins. It is lower-cased on both sides because Supabase and
+      // this table disagree about case more often than not.
+      //
+      // `users.status = 'active'` and `memberships.status = 'active'` are both
+      // required: the first is a platform-level disable, the second a
+      // customer-level suspension, and each must close this path on its own.
+      `WITH u AS (
+         SELECT id FROM users
+          WHERE status = 'active'
+            AND ((sso_subject = $1)
+                 OR ($2::text IS NOT NULL AND lower(email) = lower($2)))
+          ORDER BY (sso_subject = $1) DESC NULLS LAST
+          LIMIT 1
+       ),
+       mine AS (
+         SELECT m.org_id, m.role, m.owner_role, m.recordings_listen, m.recordings_export,
+                m.created_at
+           FROM memberships m
+           JOIN u ON u.id = m.user_id
+           JOIN organizations o ON o.id = m.org_id
+          WHERE m.status = 'active'
+            -- A suspended or closed WORKSPACE is not a workspace somebody can
+            -- act in, and letting a token into one would mean a tenant we have
+            -- switched off still accepting writes.
+            AND o.status = 'active'
+       )
+       SELECT u.id AS user_id, mine.org_id, mine.role, mine.owner_role,
+              mine.recordings_listen, mine.recordings_export,
+              (SELECT count(*) FROM mine)::text AS membership_count
+         FROM u
+         JOIN mine ON true
+        WHERE ($3::uuid IS NULL AND (SELECT count(*) FROM mine) = 1)
+           OR mine.org_id = $3::uuid
+        ORDER BY mine.created_at ASC
+        LIMIT 1`,
+      [subject, email ?? null, wantedOrgId ?? null],
+    );
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      orgId: row.org_id,
+      role: row.role as Principal["role"],
+      recordingsListen: row.recordings_listen,
+      recordingsExport: row.recordings_export,
+      viaAdminKey: false,
+      ownerRole: parseOwnerRole(row.owner_role),
+      // A tenant member, never a platform operator - see the docblock.
+      operatorEmail: null,
+      authUserId: subject,
+    };
+  }
+
   /** Resolve a session bearer token to a principal (used by the guard). */
   async principalFromToken(token: string): Promise<Principal | null> {
     const {

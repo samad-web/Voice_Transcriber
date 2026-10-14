@@ -489,9 +489,53 @@ export class AdminController {
       parkCount: Number(p.park_count ?? 0),
     }));
 
+    /**
+     * HOW LONG UNTIL THE DISK IS FULL (doc 49 P8-D).
+     *
+     * A percentage says where you are; a projection says when to act, and the
+     * second is the one somebody can put in a calendar. MinIO grows
+     * monotonically here - the retention sweep expires audio per tenant window,
+     * but nothing bounds the total - so this is the number that decides whether
+     * the storage conversation is this quarter's or next year's.
+     *
+     * `org_storage_daily` is the only history this schema keeps (one row per
+     * org per day). Summed across tenants it is the growth curve of the volume
+     * that actually fills. Needs five days of history before it says anything,
+     * and says NULL rather than guessing - a projection from two points is a
+     * rumour.
+     *
+     * It reports the rate, not the runway: the API cannot see the filesystem
+     * from inside a container, and inventing a capacity would be worse than
+     * omitting one. `scripts/alerts.js` joins this rate to `df` on the host,
+     * which is where that answer belongs.
+     */
+    const {
+      rows: [growth],
+    } = await admin.query<{ days: string | null; from_bytes: string | null; to_bytes: string | null }>(
+      `WITH daily AS (
+         SELECT day, sum(recording_bytes)::bigint AS total
+           FROM org_storage_daily
+          WHERE day > (now() - interval '21 days')::date
+          GROUP BY day
+       )
+       SELECT (max(day) - min(day))::text AS days,
+              (SELECT total FROM daily ORDER BY day ASC  LIMIT 1)::text AS from_bytes,
+              (SELECT total FROM daily ORDER BY day DESC LIMIT 1)::text AS to_bytes
+         FROM daily`,
+    );
+    const spanDays = Number(growth?.days ?? 0);
+    const grewBy = Number(growth?.to_bytes ?? 0) - Number(growth?.from_bytes ?? 0);
+    const bytesPerDay = spanDays >= 5 && grewBy > 0 ? Math.round(grewBy / spanDays) : null;
+
     return {
       stages,
       queue: { name: PIPELINE_QUEUE, depth, reachable: depth !== null },
+      storage: {
+        /** Measured over the window below; null until there is enough history. */
+        bytesPerDay,
+        windowDays: spanDays,
+        currentBytes: growth?.to_bytes ? Number(growth.to_bytes) : null,
+      },
       /**
        * Audio-bearing calls only, last 24h. `null` when there were none - an
        * honest "nothing to measure" rather than a 0% that reads as an outage,

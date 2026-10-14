@@ -4,6 +4,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { throttlerOptions } from "./config/throttling";
+import { CrossTenantAuditInterceptor } from "./common/cross-tenant-audit.interceptor";
 import { DbModule } from "./db/db.module";
 import { S3Module } from "./s3/s3.module";
 import { FcmModule } from "./fcm/fcm.module";
@@ -217,6 +218,15 @@ import { RealtimeInterceptor } from "./modules/realtime/realtime.interceptor";
     // without anybody remembering this feature exists. See the interceptor
     // for why opt-out beats opt-in here.
     { provide: APP_INTERCEPTOR, useClass: RealtimeInterceptor },
+    // Global for the same reason, and for one more: the question this answers -
+    // "did an operator read that tenant's data, and who" - is asked about
+    // routes nobody thought to decorate. An opt-in trail covers the routes
+    // somebody remembered, which are not the ones that get asked about.
+    //
+    // It logs only an OPERATOR touching a tenant, or a mutation on the
+    // admin-key path. A tenant member's own GET through their own console is
+    // not cross-tenant access and would bury both. See the interceptor.
+    { provide: APP_INTERCEPTOR, useClass: CrossTenantAuditInterceptor },
   ],
 })
 export class AppModule {}

@@ -1,6 +1,7 @@
 import {
   type CanActivate,
   type ExecutionContext,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -10,6 +11,12 @@ import { OwnerRole } from "@aura/shared";
 import { AuthService } from "../modules/auth/auth.service";
 import type { Principal, PrincipalRequest } from "./auth-principal";
 import { OrgRegistryService } from "./org-registry.service";
+import {
+  looksLikeJwt,
+  supabaseJwtConfigured,
+  SupabaseTokenError,
+  verifySupabaseJwt,
+} from "./supabase-jwt";
 import { timingSafeStringEqual } from "./timing-safe-equal";
 
 /**
@@ -34,16 +41,33 @@ export function resolveAdminKey(env: NodeJS.ProcessEnv = process.env): string | 
 }
 
 /**
- * Platform request auth. Accepts EITHER:
- *  - the dev `x-admin-key` header → a synthetic platform_admin principal (all
- *    permissions), org taken from `x-org-id` (bootstrap / service access), or
+ * Platform request auth. Accepts ONE of three:
+ *
+ *  - the `x-admin-key` header → a synthetic platform_admin principal (all
+ *    permissions), org taken from `x-org-id` (bootstrap / service access);
  *  - a real user session (`Authorization: Bearer aus_...`) → the user's role +
  *    permissions, with `x-org-id` FORCED to the session's org so a session can
- *    never act outside its tenant.
+ *    never act outside its tenant; or
+ *  - a VERIFIED SUPABASE JWT (`Authorization: Bearer eyJ...`) → the same, with
+ *    the org resolved from `users.sso_subject` → `memberships` and `x-org-id`
+ *    demoted from an assertion to a selector among that person's own
+ *    workspaces (doc 49 P5-A, added last and deliberately last).
  *
- * Either way it populates `req.principal` and leaves a valid `x-org-id` header
- * so existing controllers keep resolving the org via `orgIdFromHeader`.
- * Swapping the dev login for OIDC later changes only how the session is minted.
+ * All three populate `req.principal` and leave a valid `x-org-id` header so
+ * existing controllers keep resolving the org via `orgIdFromHeader`.
+ *
+ * ── WHY THE THIRD ONE EXISTS ────────────────────────────────────────────────
+ *
+ * `ADMIN_API_KEY` is a single credential that reads and writes every tenant's
+ * call content, transcripts, leads and finance records, with no second factor,
+ * no per-tenant scoping and no expiry. That is sound WHILE the console is its
+ * only holder - the web tier resolves the org from a verified session and never
+ * from the request. It stops being sound the moment anything else talks to this
+ * API directly, and doc 39's portals are exactly that.
+ *
+ * The admin-key path is untouched, so nothing regresses and the console can be
+ * moved off the root key one route at a time (P5-B) rather than in one change
+ * that has to be right everywhere at once.
  */
 @Injectable()
 export class AdminKeyGuard implements CanActivate {
@@ -138,6 +162,63 @@ export class AdminKeyGuard implements CanActivate {
       const principal = await this.auth.principalFromToken(header.slice("Bearer ".length));
       if (principal) {
         // Pin the request to the session's org - ignore any client-supplied header.
+        req.headers["x-org-id"] = principal.orgId;
+        req.principal = principal as Principal;
+        return true;
+      }
+    }
+
+    // ── A VERIFIED SUPABASE SESSION (P5-A) ──────────────────────────────────
+    //
+    // Routed on the token's SHAPE, not on a flag: `aus_` is the API's own
+    // session prefix and is handled above, and a JWT starts `eyJ`. So this
+    // branch cannot shadow the one above, and a caller presenting neither gets
+    // the same 401 it always did.
+    //
+    // Deliberately AFTER the admin key and the `aus_` session, so an existing
+    // caller's path is byte-for-byte unchanged and this can only ever add an
+    // acceptance, never alter one.
+    if (header?.startsWith("Bearer ")) {
+      const token = header.slice("Bearer ".length);
+      if (looksLikeJwt(token) && supabaseJwtConfigured()) {
+        let claims;
+        try {
+          claims = await verifySupabaseJwt(token);
+        } catch (err) {
+          // The reason is logged for us and NOT returned to the caller. "your
+          // token expired 4 minutes ago" is helpful; "no published key with id
+          // X" tells an attacker which keys exist.
+          console.warn(
+            `supabase jwt rejected: ${err instanceof SupabaseTokenError ? err.message : String(err)}`,
+          );
+          throw new UnauthorizedException("invalid or expired session token");
+        }
+
+        // The ONLY use of x-org-id on this path: a selector among the caller's
+        // own memberships, validated inside the query. A value naming someone
+        // else's org matches no row and denies - it does not fall back.
+        const wanted = firstHeader(req.headers["x-org-id"]);
+        const wantedOrgId =
+          wanted !== undefined && z.string().uuid().safeParse(wanted).success ? wanted : undefined;
+
+        const principal = await this.auth.principalFromSupabaseSubject(
+          claims.sub,
+          claims.email,
+          wantedOrgId,
+        );
+        if (!principal) {
+          // Told apart from a bad signature deliberately. A verified token with
+          // no usable membership is a real person with no access to the
+          // workspace they asked for - which is a 403, not a 401, and retrying
+          // with a fresh token will not change it.
+          throw new ForbiddenException(
+            "this account has no active membership in the requested workspace",
+          );
+        }
+
+        // PINNED. Whatever the caller sent is replaced by what the database
+        // said, so every downstream `orgIdFromHeader` reads a tenant the
+        // principal provably belongs to.
         req.headers["x-org-id"] = principal.orgId;
         req.principal = principal as Principal;
         return true;

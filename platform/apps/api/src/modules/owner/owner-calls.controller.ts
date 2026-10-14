@@ -746,9 +746,25 @@ export class OwnerCallsController {
           [callId],
         );
         if (aged) {
+          // WITH THE DATE. "Deleted on 3 March under your 90-day retention
+          // tier" is an answer; "deleted at some point" is the start of a
+          // support thread. The window itself is read alongside it so the
+          // sentence names the policy that applied, not just the outcome - a
+          // customer who switched plans wants to know which window caught it.
+          const {
+            rows: [org],
+          } = await client.query<{ retention_days: number | null }>(
+            `SELECT retention_days FROM organizations WHERE id = $1`,
+            [orgId],
+          );
+          const on = aged.expired_at
+            ? new Date(aged.expired_at).toISOString().slice(0, 10)
+            : null;
           throw new NotFoundException(
-            "This recording has passed your plan's audio-retention window and has been deleted. " +
-              "The transcript and everything derived from it are still here.",
+            `This recording passed your plan's audio-retention window` +
+              (org?.retention_days ? ` of ${org.retention_days} days` : "") +
+              (on ? ` and was deleted on ${on}` : " and has been deleted") +
+              ". The transcript and everything derived from it are still here.",
           );
         }
         throw new NotFoundException("no recording for this call");

@@ -1,4 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
+import { jwtSecret } from "../../config/secrets";
 import {
   BadRequestException,
   Body,
@@ -168,10 +169,7 @@ export class ErasureController {
         retainedDealIds,
         erasedAtUtc: new Date().toISOString(),
       };
-      const signature = createHmac(
-        "sha256",
-        process.env.JWT_SECRET ?? "dev-jwt-secret-change-me",
-      )
+      const signature = createHmac("sha256", jwtSecret())
         .update(JSON.stringify(receipt))
         .digest("hex");
 

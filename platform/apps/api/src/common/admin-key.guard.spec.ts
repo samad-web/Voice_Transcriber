@@ -14,7 +14,13 @@
 import { NotFoundException, UnauthorizedException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AuthService } from "../modules/auth/auth.service";
+import * as jwtLib from "jsonwebtoken";
 import { AdminKeyGuard, resolveAdminKey } from "./admin-key.guard";
+
+/** HS256, one hour, the shape self-hosted GoTrue issues. */
+function signJwt(payload: Record<string, unknown>, secret: string): string {
+  return jwtLib.sign(payload, secret, { algorithm: "HS256", expiresIn: "1h" });
+}
 import { OrgRegistryService } from "./org-registry.service";
 import {
   ORG_A,
@@ -77,7 +83,7 @@ describe("resolveAdminKey", () => {
 });
 
 describe("AdminKeyGuard", () => {
-  const auth = { principalFromToken: jest.fn() };
+  const auth = { principalFromToken: jest.fn(), principalFromSupabaseSubject: jest.fn() };
   const orgs = { exists: jest.fn() };
   let guard: AdminKeyGuard;
 
@@ -92,6 +98,14 @@ describe("AdminKeyGuard", () => {
     delete process.env.ADMIN_API_KEY;
     process.env.NODE_ENV = "test";
     auth.principalFromToken.mockReset().mockResolvedValue(null);
+    auth.principalFromSupabaseSubject.mockReset().mockResolvedValue(null);
+    // The Supabase branch is only reachable with a verifier configured; most
+    // cases in this file are about the other two paths and must not stray into
+    // it, so it is off unless a case switches it on.
+    delete process.env.SUPABASE_JWT_SECRET;
+    delete process.env.SUPABASE_INTERNAL_URL;
+    delete process.env.SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     orgs.exists.mockReset().mockResolvedValue(true);
     guard = new AdminKeyGuard(
       auth as unknown as AuthService,
@@ -502,6 +516,137 @@ describe("AdminKeyGuard", () => {
 
       await expect(guard.canActivate(context)).resolves.toBe(true);
       expect(req.principal?.ownerRole).toBe("telecaller");
+    });
+  });
+
+  // -- the Supabase JWT path (doc 49 P5-A) -----------------------------------
+  //
+  // `supabase-jwt.spec.ts` covers the VERIFIER - signatures, algorithms, the
+  // anon key. This covers what the GUARD does with a verified one, which is a
+  // different question and the one P5 is actually about: whether the org can
+  // still be chosen by the caller.
+  describe("supabase jwt path", () => {
+    const SUPABASE_SECRET = "test-supabase-jwt-secret-at-least-32-chars-long";
+    const SUB = "22222222-2222-4222-8222-222222222222";
+
+    function supabaseToken(payload: Record<string, unknown> = {}): string {
+      return signJwt({ sub: SUB, role: "authenticated", ...payload }, SUPABASE_SECRET);
+    }
+
+    const member = {
+      userId: USER_A,
+      orgId: ORG_A,
+      role: "org_admin",
+      recordingsListen: true,
+      recordingsExport: false,
+      viaAdminKey: false,
+      ownerRole: "owner",
+      operatorEmail: null,
+      authUserId: SUB,
+    };
+
+    beforeEach(() => {
+      process.env.SUPABASE_JWT_SECRET = SUPABASE_SECRET;
+    });
+
+    it("S1 - accepts a verified token and takes the org from the DATABASE", async () => {
+      auth.principalFromSupabaseSubject.mockResolvedValue(member);
+      const { context, req } = makeExecutionContext({
+        headers: { authorization: `Bearer ${supabaseToken()}` },
+      });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(req.principal?.orgId).toBe(ORG_A);
+      expect(req.principal?.viaAdminKey).toBe(false);
+      // The header is REWRITTEN, so every downstream `orgIdFromHeader` reads a
+      // tenant the principal provably belongs to.
+      expect(req.headers["x-org-id"]).toBe(ORG_A);
+    });
+
+    it("S2 - THE PIN: a token for org A sending x-org-id B cannot reach org B", async () => {
+      // THE CASE DOC 49 P5 NAMES AS THE ONE THAT PROVES IT. On the admin-key
+      // path `x-org-id` IS the tenant and is trusted by design. Here it is a
+      // selector among the caller's own memberships, so a value naming someone
+      // else's org matches no row - and the guard must deny rather than fall
+      // back to a membership the caller does have.
+      auth.principalFromSupabaseSubject.mockResolvedValue(null);
+      const { context } = makeExecutionContext({
+        headers: { authorization: `Bearer ${supabaseToken()}`, "x-org-id": ORG_B },
+      });
+
+      await expect(guard.canActivate(context)).rejects.toMatchObject({ status: 403 });
+      // And the header reached the resolver as a REQUEST, not as a fact - so
+      // the database, not the guard, decided.
+      expect(auth.principalFromSupabaseSubject).toHaveBeenCalledWith(SUB, undefined, ORG_B);
+    });
+
+    it("S3 - a malformed x-org-id is dropped rather than passed through", async () => {
+      auth.principalFromSupabaseSubject.mockResolvedValue(member);
+      const { context } = makeExecutionContext({
+        headers: { authorization: `Bearer ${supabaseToken()}`, "x-org-id": "not-a-uuid-at-all" },
+      });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      // undefined, not the string: a resolver asked for a garbage org would
+      // otherwise have to decide what to do with it, and the safe answer is
+      // for it never to arrive.
+      expect(auth.principalFromSupabaseSubject).toHaveBeenCalledWith(SUB, undefined, undefined);
+    });
+
+    it("S4 - never grants platform_admin, however the token is shaped", async () => {
+      // A Supabase session is a TENANT identity on this path. An operator has
+      // no membership and so resolves nothing at all - cross-tenant work keeps
+      // going through the admin key, which is the credential audited for it.
+      auth.principalFromSupabaseSubject.mockResolvedValue({ ...member, role: "org_admin" });
+      const { context, req } = makeExecutionContext({
+        headers: {
+          authorization: `Bearer ${supabaseToken({ role: "authenticated", is_admin: true })}`,
+        },
+      });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(req.principal?.role).not.toBe("platform_admin");
+    });
+
+    it("S5 - 401 for a bad signature, 403 for a verified stranger", async () => {
+      // Told apart deliberately. A bad signature is "authenticate again"; a
+      // verified token with no membership is a real person with no access to
+      // the workspace, and retrying will not change it.
+      const forged = signJwt({ sub: SUB, role: "authenticated" }, "a-completely-wrong-secret");
+      const bad = makeExecutionContext({ headers: { authorization: `Bearer ${forged}` } });
+      await expect(guard.canActivate(bad.context)).rejects.toMatchObject({ status: 401 });
+
+      auth.principalFromSupabaseSubject.mockResolvedValue(null);
+      const stranger = makeExecutionContext({
+        headers: { authorization: `Bearer ${supabaseToken()}` },
+      });
+      await expect(guard.canActivate(stranger.context)).rejects.toMatchObject({ status: 403 });
+    });
+
+    it("S6 - is skipped entirely when no verifier is configured", async () => {
+      // A deployment with no Supabase secret and no URL must behave exactly as
+      // it did before this path existed: the same 401, from the same line.
+      delete process.env.SUPABASE_JWT_SECRET;
+      const { context } = makeExecutionContext({
+        headers: { authorization: `Bearer ${supabaseToken()}` },
+      });
+      await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+      expect(auth.principalFromSupabaseSubject).not.toHaveBeenCalled();
+    });
+
+    it("S7 - does not shadow the API's own aus_ sessions", async () => {
+      // Routed on the token's SHAPE. `aus_` is handled by the branch above and
+      // this one must not claim it - otherwise adding Supabase support would
+      // have broken every existing session holder.
+      auth.principalFromToken.mockResolvedValue({ ...member, authUserId: null });
+      const { context, req } = makeExecutionContext({
+        headers: { authorization: "Bearer aus_abcdef0123456789" },
+      });
+
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+      expect(auth.principalFromToken).toHaveBeenCalled();
+      expect(auth.principalFromSupabaseSubject).not.toHaveBeenCalled();
+      expect(req.principal?.orgId).toBe(ORG_A);
     });
   });
 });

@@ -1,4 +1,5 @@
 import { createHash, createVerify, randomBytes } from "node:crypto";
+import { jwtSecret } from "../../config/secrets";
 import {
   BadRequestException,
   Body,
@@ -734,7 +735,7 @@ export class DevicesController {
         instance_id: device.instance_id,
         cfg_ver: device.config_version,
       },
-      process.env.JWT_SECRET ?? "dev-jwt-secret-change-me",
+      jwtSecret(),
       { subject: device.id, expiresIn: "15m" },
     );
 

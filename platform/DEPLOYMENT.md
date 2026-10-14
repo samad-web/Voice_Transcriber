@@ -585,21 +585,63 @@ migration cannot add an unprotected tenant table quietly.
    first — `AdminKeyGuard` already does exactly this for its own session tokens, so it is a
    branch to add, not a redesign.
 
-   The same premise is what makes owner-role enforcement **advisory**. The console tells the API
-   who is asking via `x-caller-owner-role` / `x-caller-user-id`, and the API trusts those headers
-   because only the console holds the admin key. Omitting `x-caller-owner-role` leaves the
-   principal's persona `null`, which `OwnerRoleGuard` treats as "pass" — so anyone holding the
-   admin key satisfies every `@RequireOwnerRole` by sending no header at all. That is one leaked
-   env var away from mattering, which is why §1 above is the item and not this one.
-2. **`JWT_SECRET` still has a published dev fallback in the API.** Four sites read
-   `process.env.JWT_SECRET ?? "dev-jwt-secret-change-me"` (`common/device-auth.guard.ts`,
-   `common/device-nonce.ts`, `modules/devices/devices.controller.ts`,
-   `modules/tenancy/erasure.controller.ts`). It is **not** live exposure — `assertRequiredEnv()`
-   rejects that literal and an unset variable in production, so the process cannot reach those
-   lines carrying it — but the boot assertion is the only thing standing there, whereas
-   `ADMIN_API_KEY` has two independent defences. `device-auth.guard.ts` reads `org_id`,
-   `instance_id` and the device id straight off the JWT payload with no database re-check, so a
-   forged token is call ingest and transcript reads for any device in any tenant.
+   **CORRECTION, 2026-10-14.** This item used to end with a paragraph claiming owner-role
+   enforcement is *advisory* — that "anyone holding the admin key satisfies every
+   `@RequireOwnerRole` by sending no header at all". **That hole is closed and the claim was
+   stale.** `OwnerRoleGuard` (`common/owner-role.guard.ts`) derives the persona from `memberships`
+   via `AuthService.ownerRoleFor`, and `admin-key.guard.ts` keeps parsing `x-caller-owner-role`
+   only for introspection — nothing authorizes against it. Stage 2.5 fixed it; this file did not
+   catch up.
+
+   The correction matters beyond the one paragraph: **a security document that overstates its
+   holes gets discounted wholesale, including on the items where it is right.** Everything left in
+   this section was re-read against the code on 2026-10-14.
+
+   **What P5-A changed.** The API now verifies a Supabase JWT itself
+   (`common/supabase-jwt.ts`), as a THIRD principal source beside the admin key and the API's own
+   `aus_` sessions. On that path the org is resolved `claims.sub` → `users.sso_subject` →
+   `memberships` and **`x-org-id` is demoted from an assertion to a selector among the caller's own
+   workspaces** — a token for org A cannot reach org B even while sending `x-org-id: B`. Set
+   `SUPABASE_JWT_SECRET` (HS256, what self-hosted GoTrue signs with) or leave the Supabase URL set
+   and it will use the published JWKS. Unset both and the branch is skipped entirely, so nothing
+   changes.
+
+   The admin-key path is **untouched**, deliberately: the console can be moved off the root key one
+   route at a time (P5-B) rather than in one change that has to be right everywhere at once. Until
+   that happens the sentence at the top of this item still holds — the admin key is a root
+   credential, and the new path reduces what *needs* one rather than what one can do.
+
+   **Cross-tenant access is now recorded.** `CrossTenantAuditInterceptor` writes an `audit_log` row
+   when a platform operator touches a tenant, or on any mutation through the admin key, deduplicated
+   to one row per (actor, org, route) per hour. Before this, "did anyone read that customer's calls,
+   and who" had no answer at all. A tenant member's own GET is not logged — it is not cross-tenant,
+   and logging it would bury the rows that are.
+2. **~~`JWT_SECRET` has a published dev fallback~~ — CLOSED 2026-10-14 (P6a).** All four sites
+   (`common/device-auth.guard.ts`, `common/device-nonce.ts`,
+   `modules/devices/devices.controller.ts`, `modules/tenancy/erasure.controller.ts`) now read
+   `jwtSecret()` from `config/secrets.ts`, which **throws** when the variable is unset or holds a
+   published default — in every environment, not only production. A `??` that substitutes a
+   known-public value fails *open*; this fails closed. `secrets.spec.ts` also pins its
+   rejected-value list as a superset of `assert-env.ts`'s, because two separate lists are exactly
+   the shape that drifts silently.
+
+   **And the device token's claims are validated** (P6b). `DeviceAuthGuard` used to copy `org_id`
+   and `instance_id` straight off the payload with no parsing, so a token carrying neither produced
+   `req.device.orgId === undefined` and the handlers passed that into `withOrg(undefined)` — a
+   tenant context set from nothing. Every claim the handlers go on to trust is now uuid-checked.
+
+   **What the guard still does not do, and why.** It does not read the device row. The tenant
+   boundary on this path is enforced by RLS one layer down: every device handler opens
+   `withOrg(req.device.orgId)` and then reads its own device row by id, so a token naming the
+   *wrong* tenant enters that tenant's context and finds no row — 409 from ingest, 401 from config.
+   A forged token cannot reach another tenant's data by naming it; it reaches a context where it
+   owns nothing. Revocation is likewise the handler's job and is already built
+   (`POST /devices/:id/logout`, `/wipe`, `/owner/devices/:id/revoke` all set a non-`active`
+   status, and the handlers refuse those), and tokens already expire in 15 minutes. The residual
+   exposure is that an already-issued token stays cryptographically valid for the rest of those 15
+   minutes while being able to do nothing — which is the right trade against a database round trip
+   on the hottest `@SkipThrottle()`d route on the platform. `device-auth.guard.spec.ts` pins that
+   reasoning so it is not rediscovered as a bug.
 3. **The operator console is single-tenant apart from `/instances`.** Its per-tenant pages read
    `DEV_ORG_ID`, so operating a second customer from them means changing that variable and
    rebuilding the web image. The **owner** console (`/owner`, §2c) is not affected — it resolves
