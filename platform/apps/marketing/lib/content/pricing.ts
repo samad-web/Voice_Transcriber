@@ -150,10 +150,16 @@ export const GST_NOTE = `All prices are per month and exclude ${regime.label}, c
 /**
  * The one sentence that keeps the page honest about buying.
  *
- * There is no self-serve checkout: the gateway integration is a placeholder by
- * decision, so a "Buy now" button on this page would lead nowhere. Every CTA
- * on the pricing page goes to /start like the rest of the site, and this line
- * explains why rather than leaving a visitor hunting for a card form.
+ * It used to read "Plans are set up with you rather than through a card form",
+ * which was true when every CTA here went to /start. It stopped being true the
+ * day the three smaller tiers grew a "Start now" button, and a line saying
+ * there is no card form, printed directly under three buttons that open one,
+ * is the kind of contradiction a buyer reads as carelessness about money.
+ *
+ * What it says now is the part that is still a real product rule: the two
+ * cadences are a commitment and a price, not a lump sum and a price - annual
+ * billing debits one month at a time (see `planPriceMinor` in @aura/shared) -
+ * and the negotiated tier genuinely is set up with a person.
  */
 export const HOW_TO_BUY =
-  "Plans are set up with you rather than through a card form, so your handsets are paired and your extraction fields are configured before you are charged for a month you cannot use yet.";
+  "The first three plans can be bought online and are debited monthly - annual billing is a twelve-month commitment at the lower monthly rate, not a payment up front. Enterprise is quoted and set up with you.";

@@ -21,13 +21,22 @@ export default async function SignupDonePage({
   const claimRef = params.ref ?? "";
   const pending = params.pending === "1";
 
+  // A `<div>`, not a `<main>`: `app/layout.tsx` already wraps every page in
+  // `<main id="main">`, and nesting a second one is invalid and leaves the skip
+  // link pointing at the outer element. The wash and the card come from
+  // `brand.css` for the same reason the checkout does - this is the screen
+  // somebody judges a payment by, and it should look like the site they just
+  // paid.
   return (
-    <main className="mk-page mx-auto max-w-2xl px-5 py-12">
-      <p className="mk-eyebrow">Thank you</p>
-      <DoneClient claimRef={claimRef} pending={pending} />
-      <p className="mt-6 text-sm opacity-70">
-        Keep this page&apos;s email handy — it is the address your workspace sign-in belongs to.
-      </p>
-    </main>
+    <div className="mk-page relative overflow-x-clip">
+      <div className="mk-wash" />
+      <div className="relative z-10 mx-auto max-w-2xl px-5 py-12 sm:px-6 sm:py-16">
+        <p className="mk-eyebrow">Thank you</p>
+        <DoneClient claimRef={claimRef} pending={pending} />
+        <p className="mt-6 text-sm" style={{ color: "var(--mk-muted)" }}>
+          Keep this page&apos;s email handy — it is the address your workspace sign-in belongs to.
+        </p>
+      </div>
+    </div>
   );
 }

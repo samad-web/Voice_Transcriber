@@ -53,7 +53,11 @@ export function DoneClient({ claimRef, pending }: { claimRef: string; pending: b
       setWaited((w) => w + 1);
       // Backs off from 2s to 10s. Fast while the webhook is probably in
       // flight, slow once we are waiting on the five-minute sweep instead.
-      timer = setTimeout(poll, waited < 10 ? 2000 : 10000);
+      // `() => void poll()` rather than `poll`: setTimeout expects a function
+      // returning nothing, and handing it an async one returns a promise
+      // nobody awaits - which is what the repo's no-misused-promises rule is
+      // for. The behaviour is identical; `poll` handles its own failure.
+      timer = setTimeout(() => void poll(), waited < 10 ? 2000 : 10000);
     };
 
     void poll();
@@ -62,8 +66,10 @@ export function DoneClient({ claimRef, pending }: { claimRef: string; pending: b
       clearTimeout(timer);
     };
     // `waited` deliberately excluded: including it would restart the poll loop
-    // on every tick instead of letting the scheduled timer run.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // on every tick instead of letting the scheduled timer run. (There is no
+    // `eslint-disable` for react-hooks/exhaustive-deps here because the plugin
+    // is not in this app's config, and a directive naming a rule that does not
+    // exist is itself an error.)
   }, [claimRef, pending]);
 
   if (pending) {
@@ -121,8 +127,11 @@ export function DoneClient({ claimRef, pending }: { claimRef: string; pending: b
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  // `mk-card` rather than a bare `border`: Tailwind's default border colour on
+  // a transparent ground was a nearly invisible box on the dark theme, which is
+  // the wrong impression to leave on the one page that follows a payment.
   return (
-    <div className="mt-8 rounded-2xl border p-6">
+    <div className="mk-card mt-8 p-6 sm:p-7">
       <h2 className="mk-display mk-h2 text-2xl">{title}</h2>
       <div className="mt-3 leading-relaxed">{children}</div>
     </div>

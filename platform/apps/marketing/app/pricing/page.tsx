@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CAPTURE_PLANS } from "@aura/shared";
 import { BreadcrumbSchema } from "@/components/breadcrumbs";
 import { JsonLd } from "@/components/json-ld";
-import { ADDON_ROWS, GST_NOTE, HOW_TO_BUY, LIMITS, PLANS } from "@/lib/content/pricing";
-import { CAPTURE_PLANS } from "@aura/shared";
+import { ADDON_ROWS, GST_NOTE, HOW_TO_BUY, LIMITS, PLANS, type PlanRow } from "@/lib/content/pricing";
 import { pageMetadata } from "@/lib/metadata";
 import { BRAND, LEGAL_ENTITY, SITE_URL, startHref } from "@/lib/site";
 
@@ -39,6 +39,26 @@ import { BRAND, LEGAL_ENTITY, SITE_URL, startHref } from "@/lib/site";
  */
 
 const CTA = startHref("pricing-cta", "pricing");
+
+/**
+ * The checkout link for a tier, or null when that tier cannot be bought online.
+ *
+ * The plan and cadence travel in the query string, so a buyer who clicked
+ * "Start now" on Growth arrives at /signup with Growth already selected. Before
+ * this, every button on this page landed on the same URL and the checkout
+ * defaulted to the first plan in the catalogue - which meant the cheapest tier
+ * was pre-selected for somebody who had just chosen the dearest one.
+ *
+ * `selfServePeriods` is the test, not `negotiated` - Growth is sellable and not
+ * negotiated, but only on the annual cadence, because its monthly debit exceeds
+ * the ceiling a bank will clear without interrupting the customer every month.
+ * The first entry is the cadence the card's headline price is quoted at.
+ */
+function signupHref(key: PlanRow["key"]): string | null {
+  const [period] = CAPTURE_PLANS[key]?.selfServePeriods ?? [];
+  if (!period) return null;
+  return `/signup?plan=${encodeURIComponent(key)}&period=${period}`;
+}
 
 export const metadata: Metadata = pageMetadata({
   title: "Pricing",
@@ -184,23 +204,16 @@ function Plans() {
                 ))}
               </ul>
 
-              {/* A plan that can be bought online gets a buy button; one that
-                  cannot still books a call. `selfServePeriods` is the test,
-                  not `negotiated` - Growth is sellable and not negotiated, but
-                  only on the annual cadence, because its monthly debit exceeds
-                  the ceiling a bank will clear without interrupting the
-                  customer every month. */}
+              {/* A plan that can be bought online gets a buy button carrying
+                  its own plan and cadence; one that cannot still books a call.
+                  See `signupHref`. */}
               <div className="mt-6">
                 <Link
-                  href={(CAPTURE_PLANS[p.key]?.selfServePeriods ?? []).length > 0 ? "/signup" : CTA}
+                  href={signupHref(p.key) ?? CTA}
                   className="mk-cta w-full justify-center"
                   style={{ padding: "0.75rem 1.25rem", fontSize: "0.9375rem" }}
                 >
-                  {p.negotiated
-                    ? "Talk to us"
-                    : (CAPTURE_PLANS[p.key]?.selfServePeriods ?? []).length > 0
-                      ? "Start now"
-                      : "Get set up"}
+                  {p.negotiated ? "Talk to us" : signupHref(p.key) ? "Start now" : "Get set up"}
                 </Link>
               </div>
             </div>
